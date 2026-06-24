@@ -204,6 +204,9 @@ def describe_image(file_path: str, question: str = "Describe this image in detai
 def get_youtube_transcript(video_url: str) -> str:
     """Fetch the transcript/captions for a YouTube video URL.
 
+    If captions are unavailable, returns the video title plus web search results
+    about the video so you can still infer the answer.
+
     Args:
         video_url: A YouTube watch URL or youtu.be link.
     """
@@ -213,11 +216,46 @@ def get_youtube_transcript(video_url: str) -> str:
 
     video_id = match.group(1)
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=["en", "en-US", "en-GB"])
-        text = " ".join(entry["text"] for entry in transcript)
+        api = YouTubeTranscriptApi()
+        transcript = api.fetch(video_id, languages=["en", "en-US", "en-GB"])
+        text = " ".join(snippet.text for snippet in transcript)
         return text[:12000]
-    except Exception as error:
-        return f"YouTube transcript unavailable: {error}"
+    except Exception as transcript_error:
+        try:
+            oembed = requests.get(
+                "https://www.youtube.com/oembed",
+                params={"url": video_url, "format": "json"},
+                timeout=20,
+            )
+            oembed.raise_for_status()
+            title = oembed.json().get("title", video_id)
+        except Exception:
+            title = video_id
+
+        try:
+            from ddgs import DDGS
+
+            with DDGS() as ddgs:
+                results = list(
+                    ddgs.text(
+                        f'"{title}" bird species video transcript summary',
+                        max_results=5,
+                    )
+                )
+            snippets = []
+            for item in results:
+                body = item.get("body") or item.get("title") or str(item)
+                snippets.append(body)
+            search_text = "\n\n".join(snippets)
+        except Exception as search_error:
+            search_text = f"Web search fallback failed: {search_error}"
+
+        return (
+            f"YouTube transcript unavailable ({transcript_error}).\n"
+            f"Video title: {title}\n"
+            f"Use the following web search results about the video instead:\n\n"
+            f"{search_text[:10000]}"
+        )
 
 
 def build_tools() -> list:

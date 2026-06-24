@@ -13,7 +13,7 @@ load_dotenv()
 
 from tools import build_tools
 
-DEFAULT_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen3-Next-80B-A3B-Thinking")
+DEFAULT_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-72B-Instruct")
 MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "15"))
 
 GAIA_SYSTEM_PROMPT = """
@@ -23,7 +23,15 @@ Rules:
 - Use tools and Python code whenever needed.
 - Search the web or Wikipedia for factual questions.
 - For attached files, use the matching tool before answering.
-- For YouTube links, use get_youtube_transcript.
+- For YouTube links, use get_youtube_transcript first.
+- When writing agent steps, always use this exact format:
+
+Thoughts: brief reasoning
+<code>
+# valid python code calling tools
+</code>
+
+- Never output partial tags like `3</code>` or bare numbers outside a proper code block.
 - Think carefully, verify facts, and compute when needed.
 - Your final response must contain ONLY the exact answer requested.
 - Do not include explanations, markdown, prefixes, or the phrase "FINAL ANSWER".
