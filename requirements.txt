@@ -1,2 +1,10 @@
 gradio
 requests
+pandas
+smolagents
+ddgs
+markdownify
+youtube-transcript-api
+huggingface-hub
+openpyxl
+tabulate
