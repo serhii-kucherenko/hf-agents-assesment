@@ -181,8 +181,9 @@ def describe_image(file_path: str, question: str = "Describe this image in detai
         data_url = f"data:{mime_type};base64,{encoded}"
 
         client = InferenceClient(token=token)
+        vision_model = os.getenv("HF_VISION_MODEL", "Qwen/Qwen2.5-VL-72B-Instruct")
         response = client.chat.completions.create(
-            model="Qwen/Qwen2.5-VL-7B-Instruct",
+            model=vision_model,
             messages=[
                 {
                     "role": "user",
