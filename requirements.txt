@@ -10,3 +10,4 @@ openpyxl
 tabulate
 python-dotenv
 faster-whisper
+datasets

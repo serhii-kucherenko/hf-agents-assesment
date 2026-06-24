@@ -12,21 +12,11 @@ import requests
 from dotenv import load_dotenv
 
 from agent import GaiaAgent
+from file_resolver import resolve_task_attachment
 
 load_dotenv()
 
 API_URL = "https://agents-course-unit4-scoring.hf.space"
-
-
-def download_file(task_id: str, file_name: str, directory: Path) -> tuple[str | None, str | None]:
-    destination = directory / file_name
-    try:
-        response = requests.get(f"{API_URL}/files/{task_id}", timeout=60)
-        response.raise_for_status()
-        destination.write_bytes(response.content)
-        return str(destination.resolve()), None
-    except requests.exceptions.RequestException as error:
-        return None, str(error)
 
 
 def run_question(agent: GaiaAgent, item: dict, download_dir: Path | None) -> str:
@@ -34,7 +24,9 @@ def run_question(agent: GaiaAgent, item: dict, download_dir: Path | None) -> str
     file_error = None
     file_name = item.get("file_name") or ""
     if file_name and download_dir is not None:
-        file_path, file_error = download_file(item["task_id"], file_name, download_dir)
+        file_path, file_error = resolve_task_attachment(
+            API_URL, item["task_id"], file_name, download_dir
+        )
     return agent(item["question"], file_path=file_path, file_error=file_error)
 
 

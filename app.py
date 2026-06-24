@@ -8,6 +8,7 @@ import requests
 from dotenv import load_dotenv
 
 from agent import GaiaAgent
+from file_resolver import resolve_task_attachment
 
 load_dotenv()
 
@@ -24,31 +25,6 @@ def resolve_username(profile: gr.OAuthProfile | None) -> str | None:
     if local_username:
         return local_username.strip()
     return None
-
-
-def download_task_file(
-    api_url: str, task_id: str, file_name: str, download_dir: Path
-) -> tuple[str | None, str | None]:
-    if not file_name:
-        return None, None
-
-    file_url = f"{api_url}/files/{task_id}"
-    destination = download_dir / file_name
-    print(f"Downloading file for task {task_id}: {file_url}")
-
-    try:
-        response = requests.get(file_url, timeout=60)
-        response.raise_for_status()
-        destination.write_bytes(response.content)
-        return str(destination.resolve()), None
-    except requests.exceptions.HTTPError as error:
-        message = f"{error.response.status_code} for {file_url}"
-        print(f"File download failed for task {task_id}: {message}")
-        return None, message
-    except requests.exceptions.RequestException as error:
-        message = str(error)
-        print(f"File download failed for task {task_id}: {message}")
-        return None, message
 
 
 def run_and_submit_all(profile: gr.OAuthProfile | None = None):
@@ -112,7 +88,7 @@ def run_and_submit_all(profile: gr.OAuthProfile | None = None):
             file_error = None
             try:
                 if file_name:
-                    file_path, file_error = download_task_file(
+                    file_path, file_error = resolve_task_attachment(
                         api_url, task_id, file_name, download_dir
                     )
                 submitted_answer = agent(
