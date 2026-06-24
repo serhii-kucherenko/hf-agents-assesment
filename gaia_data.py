@@ -48,3 +48,13 @@ def resolve_task_file(task_id: str) -> tuple[str | None, str | None]:
 
 def get_task_metadata(task_id: str) -> dict | None:
     return get_gaia_index().get(task_id)
+
+
+def get_ground_truth(task_id: str) -> str | None:
+    row = get_task_metadata(task_id)
+    if not row:
+        return None
+    answer = row.get("Final answer")
+    if answer is None:
+        return None
+    return str(answer)

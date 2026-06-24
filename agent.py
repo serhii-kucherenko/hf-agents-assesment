@@ -12,38 +12,46 @@ from smolagents import CodeAgent
 load_dotenv()
 
 from model_provider import build_model, get_llm_provider, use_markdown_code_blocks
+from scoring import normalize_answer
 from tools import build_tools
 
 MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "8"))
 
+# Adapted from the official GAIA leaderboard prompt:
+# https://huggingface.co/spaces/gaia-benchmark/leaderboard
 GAIA_SYSTEM_PROMPT = """
-You are an expert research assistant solving GAIA benchmark questions.
+You are a general AI assistant solving GAIA Level 1 questions.
 
-Rules:
-- Use tools and Python code whenever needed.
-- Search the web or Wikipedia for factual questions.
-- For attached files, use the matching tool before answering.
-- For YouTube links, use get_youtube_transcript first.
-- Every action must be valid Python inside a code block.
-- End with final_answer("your exact answer") once you are confident.
-- Never output bare answers or partial tags outside a code block.
-- Your final answer must contain ONLY the exact answer requested.
-- Do not include explanations, markdown, prefixes, or the phrase "FINAL ANSWER".
-- Match the requested format exactly: numbers, names, comma-separated lists, algebraic notation, etc.
-- If asked for a comma-separated list, use commas with no extra spaces unless the question asks otherwise.
-- If asked for a single word or name, return only that word or name.
+Use tools and Python code whenever needed:
+- web search or Wikipedia for factual questions
+- file tools for attachments
+- get_youtube_transcript for YouTube links
+
+Every action must be valid Python inside a code block.
+When done, call final_answer("...") with ONLY the answer value.
+
+Answer formatting rules (critical):
+- Return a number, as few words as possible, or a comma-separated list
+- Numbers: no commas in the number; no $ or % unless the question asks for them
+- Strings: no articles; no abbreviations unless specified
+- Lists: apply the same rules to each item
+- Do NOT pass "FINAL ANSWER:" into final_answer()
+- Do NOT add explanations, markdown, or extra punctuation
+
+Examples:
+- Question asks for a count -> final_answer("3")
+- Question asks for a name -> final_answer("Smith")
+- Question asks for a list -> final_answer("a,b,c")
 """.strip()
 
 
 def _extract_answer(raw_result: str) -> str:
     text = str(raw_result).strip()
-    text = re.sub(r"^FINAL ANSWER:\s*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"^Answer:\s*", "", text, flags=re.IGNORECASE)
     if "```" in text:
         code_blocks = re.findall(r"```(?:\w*\n)?(.*?)```", text, flags=re.DOTALL)
         if code_blocks:
             text = code_blocks[-1].strip()
-    return text.strip()
+    return normalize_answer(text)
 
 
 def _build_prompt(question: str, file_path: str | None, file_error: str | None = None) -> str:
@@ -53,7 +61,7 @@ def _build_prompt(question: str, file_path: str | None, file_error: str | None =
         path = Path(file_path)
         suffix = path.suffix.lower()
         attachment_hint = {
-            ".py": "A Python file is attached. Use read_text_file if needed.",
+            ".py": "A Python file is attached. Use read_text_file, then run or reason over it.",
             ".xlsx": "An Excel file is attached. Use read_excel_summary.",
             ".xls": "An Excel file is attached. Use read_excel_summary.",
             ".mp3": "An audio file is attached. Use transcribe_audio.",
@@ -66,8 +74,8 @@ def _build_prompt(question: str, file_path: str | None, file_error: str | None =
         parts.extend([attachment_hint, f"Attached file path: {path.resolve()}"])
     elif file_error:
         parts.append(
-            "Note: the benchmark file attachment could not be downloaded from the "
-            f"course API ({file_error}). Answer using web search and other tools instead."
+            "Note: the benchmark file attachment could not be loaded "
+            f"({file_error}). Answer using web search and other tools instead."
         )
 
     return "\n\n".join(parts)
