@@ -32,13 +32,14 @@ def build_model() -> Model:
         )
         print(
             f"Using Ollama model {ollama_model_id} at {api_base} "
-            f"(num_ctx={num_ctx})"
+            f"(num_ctx={num_ctx}, think=False)"
         )
         return LiteLLMModel(
             model_id=ollama_model_id,
             api_base=api_base,
             api_key=os.getenv("OLLAMA_API_KEY", "ollama"),
             num_ctx=num_ctx,
+            think=False,
         )
 
     model_name = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
@@ -50,3 +51,9 @@ def build_model() -> Model:
         )
     print(f"Using Hugging Face Inference model {model_name}")
     return InferenceClientModel(model_id=model_name, token=token)
+
+
+def use_markdown_code_blocks() -> bool:
+    if get_llm_provider() == "ollama":
+        return True
+    return os.getenv("AGENT_CODE_BLOCKS", "markdown").strip().lower() == "markdown"

@@ -18,20 +18,24 @@ load_dotenv()
 API_URL = "https://agents-course-unit4-scoring.hf.space"
 
 
-def download_file(task_id: str, file_name: str, directory: Path) -> str:
+def download_file(task_id: str, file_name: str, directory: Path) -> tuple[str | None, str | None]:
     destination = directory / file_name
-    response = requests.get(f"{API_URL}/files/{task_id}", timeout=60)
-    response.raise_for_status()
-    destination.write_bytes(response.content)
-    return str(destination.resolve())
+    try:
+        response = requests.get(f"{API_URL}/files/{task_id}", timeout=60)
+        response.raise_for_status()
+        destination.write_bytes(response.content)
+        return str(destination.resolve()), None
+    except requests.exceptions.RequestException as error:
+        return None, str(error)
 
 
 def run_question(agent: GaiaAgent, item: dict, download_dir: Path | None) -> str:
     file_path = None
+    file_error = None
     file_name = item.get("file_name") or ""
     if file_name and download_dir is not None:
-        file_path = download_file(item["task_id"], file_name, download_dir)
-    return agent(item["question"], file_path=file_path)
+        file_path, file_error = download_file(item["task_id"], file_name, download_dir)
+    return agent(item["question"], file_path=file_path, file_error=file_error)
 
 
 def main() -> None:

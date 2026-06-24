@@ -26,18 +26,29 @@ def resolve_username(profile: gr.OAuthProfile | None) -> str | None:
     return None
 
 
-def download_task_file(api_url: str, task_id: str, file_name: str, download_dir: Path) -> str | None:
+def download_task_file(
+    api_url: str, task_id: str, file_name: str, download_dir: Path
+) -> tuple[str | None, str | None]:
     if not file_name:
-        return None
+        return None, None
 
     file_url = f"{api_url}/files/{task_id}"
     destination = download_dir / file_name
     print(f"Downloading file for task {task_id}: {file_url}")
 
-    response = requests.get(file_url, timeout=60)
-    response.raise_for_status()
-    destination.write_bytes(response.content)
-    return str(destination.resolve())
+    try:
+        response = requests.get(file_url, timeout=60)
+        response.raise_for_status()
+        destination.write_bytes(response.content)
+        return str(destination.resolve()), None
+    except requests.exceptions.HTTPError as error:
+        message = f"{error.response.status_code} for {file_url}"
+        print(f"File download failed for task {task_id}: {message}")
+        return None, message
+    except requests.exceptions.RequestException as error:
+        message = str(error)
+        print(f"File download failed for task {task_id}: {message}")
+        return None, message
 
 
 def run_and_submit_all(profile: gr.OAuthProfile | None = None):
@@ -98,10 +109,17 @@ def run_and_submit_all(profile: gr.OAuthProfile | None = None):
                 continue
 
             file_path = None
+            file_error = None
             try:
                 if file_name:
-                    file_path = download_task_file(api_url, task_id, file_name, download_dir)
-                submitted_answer = agent(question_text, file_path=file_path)
+                    file_path, file_error = download_task_file(
+                        api_url, task_id, file_name, download_dir
+                    )
+                submitted_answer = agent(
+                    question_text,
+                    file_path=file_path,
+                    file_error=file_error,
+                )
                 answers_payload.append(
                     {"task_id": task_id, "submitted_answer": submitted_answer}
                 )
