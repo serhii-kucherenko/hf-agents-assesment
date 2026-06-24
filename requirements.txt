@@ -1,7 +1,7 @@
 gradio[oauth]>=5.25.2
 requests
 pandas
-smolagents
+smolagents[litellm]
 ddgs
 markdownify
 youtube-transcript-api>=1.0.0
@@ -9,3 +9,4 @@ huggingface-hub
 openpyxl
 tabulate
 python-dotenv
+faster-whisper

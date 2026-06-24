@@ -128,24 +128,44 @@ def transcribe_audio(file_path: str) -> str:
     if not path.exists():
         return f"Audio file not found: {file_path}"
 
-    token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
-    if not token:
-        return "HF_TOKEN is required for audio transcription."
-
     try:
-        from huggingface_hub import InferenceClient
+        from faster_whisper import WhisperModel
 
-        client = InferenceClient(token=token)
-        with path.open("rb") as audio_file:
-            transcript = client.automatic_speech_recognition(
-                audio_file.read(),
-                model="openai/whisper-large-v3",
+        model_size = os.getenv("WHISPER_MODEL", "base")
+        whisper = WhisperModel(model_size, device="cpu", compute_type="int8")
+        segments, _info = whisper.transcribe(str(path))
+        text = " ".join(segment.text.strip() for segment in segments)
+        if text:
+            return text[:12000]
+    except Exception as local_error:
+        hf_error = None
+        token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+        if token:
+            try:
+                from huggingface_hub import InferenceClient
+
+                client = InferenceClient(token=token)
+                with path.open("rb") as audio_file:
+                    transcript = client.automatic_speech_recognition(
+                        audio_file.read(),
+                        model="openai/whisper-large-v3",
+                    )
+                if isinstance(transcript, dict):
+                    return transcript.get("text", str(transcript))
+                return str(transcript)
+            except Exception as error:
+                hf_error = error
+        if hf_error:
+            return (
+                f"Local transcription failed: {local_error}. "
+                f"HF fallback failed: {hf_error}"
             )
-        if isinstance(transcript, dict):
-            return transcript.get("text", str(transcript))
-        return str(transcript)
-    except Exception as error:
-        return f"Audio transcription failed: {error}"
+        return (
+            f"Local transcription failed: {local_error}. "
+            "Install faster-whisper or set HF_TOKEN for cloud fallback."
+        )
+
+    return "Audio transcription returned no text."
 
 
 @tool
@@ -160,13 +180,41 @@ def describe_image(file_path: str, question: str = "Describe this image in detai
     if not path.exists():
         return f"Image file not found: {file_path}"
 
+    import base64
+
+    image_b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+    vision_model = os.getenv("OLLAMA_VISION_MODEL", "").strip()
+    if vision_model:
+        try:
+            api_base = os.getenv("OLLAMA_API_BASE", "http://127.0.0.1:11434")
+            response = requests.post(
+                f"{api_base.rstrip('/')}/api/chat",
+                json={
+                    "model": vision_model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": question,
+                            "images": [image_b64],
+                        }
+                    ],
+                    "stream": False,
+                },
+                timeout=180,
+            )
+            response.raise_for_status()
+            return response.json()["message"]["content"]
+        except Exception as error:
+            return f"Ollama vision analysis failed: {error}"
+
     token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
     if not token:
-        return "HF_TOKEN is required for image analysis."
+        return (
+            "No local vision model configured. Set OLLAMA_VISION_MODEL in .env "
+            "(for example after running `ollama pull llava:7b`) or set HF_TOKEN."
+        )
 
     try:
-        import base64
-
         from huggingface_hub import InferenceClient
 
         mime_type = {
@@ -175,10 +223,7 @@ def describe_image(file_path: str, question: str = "Describe this image in detai
             ".jpeg": "image/jpeg",
             ".webp": "image/webp",
         }.get(path.suffix.lower(), "image/png")
-
-        image_bytes = path.read_bytes()
-        encoded = base64.b64encode(image_bytes).decode("ascii")
-        data_url = f"data:{mime_type};base64,{encoded}"
+        data_url = f"data:{mime_type};base64,{image_b64}"
 
         client = InferenceClient(token=token)
         vision_model = os.getenv("HF_VISION_MODEL", "Qwen/Qwen2.5-VL-72B-Instruct")

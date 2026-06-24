@@ -7,13 +7,13 @@ import re
 from pathlib import Path
 
 from dotenv import load_dotenv
-from smolagents import CodeAgent, InferenceClientModel
+from smolagents import CodeAgent
 
 load_dotenv()
 
+from model_provider import build_model
 from tools import build_tools
 
-DEFAULT_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
 MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "10"))
 
 GAIA_SYSTEM_PROMPT = """
@@ -78,14 +78,8 @@ def _build_prompt(question: str, file_path: str | None) -> str:
 
 
 class GaiaAgent:
-    def __init__(self, model_name: str = DEFAULT_MODEL):
-        token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
-        if not token:
-            raise RuntimeError(
-                "Set HF_TOKEN in your Space secrets before running the evaluation."
-            )
-
-        model = InferenceClientModel(model_id=model_name, token=token)
+    def __init__(self):
+        model = build_model()
         self.agent = CodeAgent(
             tools=build_tools(),
             model=model,
@@ -104,7 +98,6 @@ class GaiaAgent:
                 "numpy",
             ],
         )
-        print(f"GaiaAgent initialized with model: {model_name}")
 
     def __call__(self, question: str, file_path: str | None = None) -> str:
         prompt = _build_prompt(question, file_path)
