@@ -13,8 +13,8 @@ load_dotenv()
 
 from tools import build_tools
 
-DEFAULT_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-72B-Instruct")
-MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "15"))
+DEFAULT_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "10"))
 
 GAIA_SYSTEM_PROMPT = """
 You are an expert research assistant solving GAIA benchmark questions.
