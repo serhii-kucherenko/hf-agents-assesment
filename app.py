@@ -5,11 +5,25 @@ from pathlib import Path
 import gradio as gr
 import pandas as pd
 import requests
+from dotenv import load_dotenv
 
 from agent import GaiaAgent
 
+load_dotenv()
+
 # --- Constants ---
 DEFAULT_API_URL = "https://agents-course-unit4-scoring.hf.space"
+IS_HF_SPACE = bool(os.getenv("SPACE_ID"))
+DEFAULT_SPACE_ID = os.getenv("HF_SPACE_ID", "ken2ki/Final_Assignment_Template")
+
+
+def resolve_username(profile: gr.OAuthProfile | None) -> str | None:
+    if profile:
+        return profile.username.strip()
+    local_username = os.getenv("HF_USERNAME")
+    if local_username:
+        return local_username.strip()
+    return None
 
 
 def download_task_file(api_url: str, task_id: str, file_name: str, download_dir: Path) -> str | None:
@@ -26,16 +40,19 @@ def download_task_file(api_url: str, task_id: str, file_name: str, download_dir:
     return str(destination.resolve())
 
 
-def run_and_submit_all(profile: gr.OAuthProfile | None):
+def run_and_submit_all(profile: gr.OAuthProfile | None = None):
     """Fetch all questions, run the GAIA agent, submit answers, and display results."""
-    space_id = os.getenv("SPACE_ID")
+    username = resolve_username(profile)
+    if not username:
+        if IS_HF_SPACE:
+            return "Please log in to Hugging Face with the button above.", None
+        return (
+            "Local mode: add HF_USERNAME=your_hf_username to your .env file, then retry.",
+            None,
+        )
 
-    if profile:
-        username = f"{profile.username}"
-        print(f"User logged in: {username}")
-    else:
-        print("User not logged in.")
-        return "Please Login to Hugging Face with the button.", None
+    print(f"Running as user: {username}")
+    space_id = os.getenv("SPACE_ID") or DEFAULT_SPACE_ID
 
     api_url = DEFAULT_API_URL
     questions_url = f"{api_url}/questions"
@@ -109,7 +126,7 @@ def run_and_submit_all(profile: gr.OAuthProfile | None):
         return "Agent did not produce any answers to submit.", pd.DataFrame(results_log)
 
     submission_data = {
-        "username": username.strip(),
+        "username": username,
         "agent_code": agent_code,
         "answers": answers_payload,
     }
@@ -151,20 +168,33 @@ def run_and_submit_all(profile: gr.OAuthProfile | None):
 
 with gr.Blocks() as demo:
     gr.Markdown("# GAIA Agent Evaluation Runner")
-    gr.Markdown(
-        """
+    if IS_HF_SPACE:
+        instructions = """
         **Instructions:**
 
         1. Add your `HF_TOKEN` secret in Space settings.
         2. Log in to Hugging Face with the button below.
         3. Click **Run Evaluation & Submit All Answers** to score your agent on the 20 GAIA questions.
+        """
+    else:
+        instructions = """
+        **Local mode**
 
+        1. Create a `.env` file with `HF_TOKEN` and `HF_USERNAME=ken2ki`.
+        2. Activate the project venv: `source .venv/bin/activate`
+        3. Click **Run Evaluation & Submit All Answers** (no HF login needed locally).
+        """
+    gr.Markdown(
+        instructions
+        + """
         Your agent uses `smolagents` with web search, Wikipedia, file reading, audio transcription,
         image analysis, and Python code execution.
         """
     )
 
-    gr.LoginButton()
+    if IS_HF_SPACE:
+        gr.LoginButton()
+
     run_button = gr.Button("Run Evaluation & Submit All Answers")
     status_output = gr.Textbox(
         label="Run Status / Submission Result", lines=5, interactive=False
@@ -187,5 +217,8 @@ if __name__ == "__main__":
     if space_id_startup:
         print(f"SPACE_ID found: {space_id_startup}")
         print(f"Repo Tree URL: https://huggingface.co/spaces/{space_id_startup}/tree/main")
+    else:
+        print("Running locally (SPACE_ID not set).")
+        print("Use HF_TOKEN and HF_USERNAME in .env for evaluation runs.")
 
     demo.launch(debug=True, share=False)

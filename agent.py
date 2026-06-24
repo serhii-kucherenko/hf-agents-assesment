@@ -6,7 +6,10 @@ import os
 import re
 from pathlib import Path
 
+from dotenv import load_dotenv
 from smolagents import CodeAgent, InferenceClientModel
+
+load_dotenv()
 
 from tools import build_tools
 

@@ -1,4 +1,4 @@
-gradio
+gradio[oauth]>=5.25.2
 requests
 pandas
 smolagents
@@ -8,3 +8,4 @@ youtube-transcript-api
 huggingface-hub
 openpyxl
 tabulate
+python-dotenv
