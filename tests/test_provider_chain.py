@@ -15,26 +15,47 @@ def _normalize(model_name: str) -> str:
     return model_name.strip()
 
 
-def test_build_provider_chain_groq_cerebras_google():
+def test_build_provider_chain_default_order_cerebras_first():
     env = {
         "GROQ_API_KEY": "gsk_test",
         "CEREBRAS_API_KEY": "csk_test",
         "GOOGLE_API_KEY": "g_test",
         "GROQ_MODEL": "scout",
         "GROQ_MODEL_FALLBACK_CHAIN": "compound",
-        "PROVIDER_FALLBACK_ORDER": "groq,cerebras,google",
     }
     with patch.dict("os.environ", env, clear=False):
         chain = build_provider_fallback_chain(_normalize)
 
     labels = [slot.label for slot in chain]
-    assert labels[0] == "groq:scout"
-    assert "groq:compound" in labels
-    assert "cerebras:qwen-3-32b" in labels
-    assert labels[-1] == "google:gemini/gemini-2.5-flash-lite"
+    assert labels[0] == "cerebras:qwen-3-32b"
+    assert "cerebras:llama-3.3-70b" in labels
+    assert "cerebras:llama3.1-8b" in labels
+    assert any(label.startswith("google:gemini/") for label in labels)
+    assert labels[-1] == "groq:compound"
+    assert "groq:scout" in labels
 
 
-def test_groq_stays_first_when_order_puts_cerebras_first():
+def test_build_provider_chain_respects_explicit_order():
+    env = {
+        "GROQ_API_KEY": "gsk_test",
+        "CEREBRAS_API_KEY": "csk_test",
+        "GOOGLE_API_KEY": "g_test",
+        "PROVIDER_FALLBACK_ORDER": "groq,cerebras,google",
+        "GROQ_MODEL": "scout",
+    }
+    with patch.dict("os.environ", env, clear=False):
+        chain = build_provider_fallback_chain(_normalize)
+
+    assert chain[0].provider == "groq"
+    assert chain[0].model_id == "scout"
+
+
+def test_default_provider_order():
+    with patch.dict("os.environ", {}, clear=False):
+        assert provider_fallback_order() == ["cerebras", "google", "groq"]
+
+
+def test_cerebras_before_groq_in_default_chain():
     env = {
         "GROQ_API_KEY": "gsk_test",
         "CEREBRAS_API_KEY": "csk_test",
@@ -44,8 +65,10 @@ def test_groq_stays_first_when_order_puts_cerebras_first():
     with patch.dict("os.environ", env, clear=False):
         chain = build_provider_fallback_chain(_normalize)
 
-    assert chain[0].provider == "groq"
-    assert any(slot.provider == "cerebras" for slot in chain)
+    assert chain[0].provider == "cerebras"
+    groq_index = next(i for i, slot in enumerate(chain) if slot.provider == "groq")
+    google_index = next(i for i, slot in enumerate(chain) if slot.provider == "google")
+    assert google_index < groq_index
 
 
 def test_cerebras_model_id_uses_api_base_not_litellm_prefix():

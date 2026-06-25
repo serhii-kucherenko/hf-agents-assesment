@@ -159,7 +159,7 @@ The same agent code runs locally and on the Space, but the **LLM backend** chang
 
 Set `LLM_PROVIDER` explicitly to override: `ollama`, `llamacpp`, `groq`, `cerebras`, `google`, or `hf`.
 
-**Provider rotation** (`PROVIDER_FALLBACK_ENABLED=1`, default on): Groq models first, then Cerebras, then Gemini. Order via `PROVIDER_FALLBACK_ORDER=groq,cerebras,google`. Hard limits (TPD, 413, context) skip to the next slot immediately (default **5s** between calls).
+**Provider rotation** (`PROVIDER_FALLBACK_ENABLED=1`, default on): Cerebras models first, then Gemini, then Groq. Order via `PROVIDER_FALLBACK_ORDER=cerebras,google,groq`. Hard limits (TPD, 413, context) skip to the next slot immediately (default **5s** between calls).
 
 ---
 
@@ -214,7 +214,7 @@ See `.env.example` for the full list. The most important knobs:
 | `GROQ_FALLBACK_ENABLED` | Auto-switch Groq models after hard limits (default 1) |
 | `GROQ_MODEL_FALLBACK_CHAIN` | Comma-separated Groq fallback model ids |
 | `CEREBRAS_API_KEY` / `GOOGLE_API_KEY` | Cross-provider fallback after Groq (no model config needed) |
-| `PROVIDER_FALLBACK_ORDER` | Provider order, e.g. `groq,cerebras,google` |
+| `PROVIDER_FALLBACK_ORDER` | Provider order, e.g. `cerebras,google,groq` |
 | `GROQ_MIN_REQUEST_INTERVAL` | Seconds between cloud API calls (default 5) |
 | `GROQ_MAX_RETRIES` | Retries on 429 (default 5) |
 | `HF_USERNAME` | Your HF username for API submit |

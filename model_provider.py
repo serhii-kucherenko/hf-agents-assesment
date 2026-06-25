@@ -31,14 +31,14 @@ def get_llm_provider() -> str:
     if os.getenv("USE_OLLAMA", "").strip().lower() in {"1", "true", "yes"}:
         return "ollama"
 
-    # On HF Space: prefer direct Groq if key is set (avoids HF inference credits)
+    # On HF Space: prefer Cerebras/Google/Groq keys over HF inference credits
     if os.getenv("SPACE_ID"):
-        if os.getenv("GROQ_API_KEY"):
-            return "groq"
         if os.getenv("CEREBRAS_API_KEY"):
             return "cerebras"
         if os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"):
             return "google"
+        if os.getenv("GROQ_API_KEY"):
+            return "groq"
         return "hf"
 
     return "llamacpp"

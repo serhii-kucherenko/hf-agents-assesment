@@ -1,4 +1,4 @@
-"""Cross-provider LLM fallback: Groq → Cerebras → Google Gemini."""
+"""Cross-provider LLM fallback: Cerebras → Google Gemini → Groq."""
 
 from __future__ import annotations
 
@@ -19,6 +19,11 @@ from groq_model import (
 )
 
 DEFAULT_CEREBRAS_MODEL = "qwen-3-32b"
+DEFAULT_CEREBRAS_MODEL_CHAIN = (
+    "qwen-3-32b",
+    "llama-3.3-70b",
+    "llama3.1-8b",
+)
 DEFAULT_GOOGLE_MODEL = "gemini-2.5-flash-lite"
 
 GROQ_API_BASE = "https://api.groq.com/openai/v1"
@@ -52,7 +57,7 @@ def provider_fallback_enabled() -> bool:
 
 
 def provider_fallback_order() -> list[str]:
-    raw = os.getenv("PROVIDER_FALLBACK_ORDER", "groq,cerebras,google").strip()
+    raw = os.getenv("PROVIDER_FALLBACK_ORDER", "cerebras,google,groq").strip()
     order = [part.strip().lower() for part in raw.split(",") if part.strip()]
     normalized: list[str] = []
     for provider in order:
@@ -60,7 +65,7 @@ def provider_fallback_order() -> list[str]:
             provider = "google"
         if provider not in normalized:
             normalized.append(provider)
-    return normalized or ["groq", "cerebras", "google"]
+    return normalized or ["cerebras", "google", "groq"]
 
 
 def google_api_key() -> str | None:
@@ -123,13 +128,11 @@ def _cerebras_slots(_normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
     if not api_key:
         return []
     api_base = os.getenv("CEREBRAS_API_BASE", CEREBRAS_API_BASE)
-    return _single_provider_slot(
-        provider="cerebras",
-        model_id=DEFAULT_CEREBRAS_MODEL,
-        api_key=api_key,
-        api_base=api_base,
-        normalize=_normalize_cerebras_model_id,
-    )
+    model_ids = [_normalize_cerebras_model_id(model_id) for model_id in DEFAULT_CEREBRAS_MODEL_CHAIN]
+    return [
+        ModelSlot(provider="cerebras", model_id=model_id, api_key=api_key, api_base=api_base)
+        for model_id in model_ids
+    ]
 
 
 def _google_slots(_normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
@@ -151,29 +154,17 @@ def build_provider_fallback_chain(normalize_groq: Callable[[str], str]) -> list[
         "cerebras": _cerebras_slots,
         "google": _google_slots,
     }
-    order = provider_fallback_order()
-    groq_slots = _groq_slots(normalize_groq)
-    # Groq is always primary when its key is set (ignore PROVIDER_FALLBACK_ORDER for groq).
-    providers_after = [provider for provider in order if provider != "groq"]
-    if not groq_slots:
-        providers_after = order
-
     slots: list[ModelSlot] = []
     seen: set[str] = set()
-
-    def add_slots(new_slots: list[ModelSlot]) -> None:
-        for slot in new_slots:
+    for provider in provider_fallback_order():
+        builder = builders.get(provider)
+        if builder is None:
+            continue
+        for slot in builder(normalize_groq):
             if slot.label in seen:
                 continue
             slots.append(slot)
             seen.add(slot.label)
-
-    add_slots(groq_slots)
-    for provider in providers_after:
-        builder = builders.get(provider)
-        if builder is None:
-            continue
-        add_slots(builder(normalize_groq))
     return slots
 
 
