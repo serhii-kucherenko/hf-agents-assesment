@@ -5,7 +5,6 @@ from smolagents.models import ChatMessage, MessageRole
 
 from groq_model import (
     GROQ_DEFAULT_SPACE_MODEL,
-    GroqFallbackModel,
     build_groq_model_chain,
     call_with_groq_retry,
     default_groq_model_id,
@@ -19,6 +18,7 @@ from groq_model import (
     is_hard_groq_limit_error,
     parse_groq_retry_seconds,
 )
+from provider_chain import GroqFallbackModel
 
 
 def _normalize(model_name: str) -> str:
@@ -55,10 +55,10 @@ def test_groq_fallback_model_skips_context_limit():
         api_base="https://api.groq.com/openai/v1",
     )
 
-    with patch.object(model, "_get_model", side_effect=lambda model_id: {
-        "allam-2-7b": primary,
-        "qwen/qwen3-32b": fallback,
-    }[model_id]):
+    with patch.object(model, "_get_model", side_effect=lambda slot: {
+        "groq:allam-2-7b": primary,
+        "groq:qwen/qwen3-32b": fallback,
+    }[slot.label]):
         result = model.generate([{"role": "user", "content": "hello"}])
 
     assert result.content == "ok"
@@ -85,10 +85,10 @@ def test_groq_fallback_model_skips_missing_model():
         api_base="https://api.groq.com/openai/v1",
     )
 
-    with patch.object(model, "_get_model", side_effect=lambda model_id: {
-        "compound-mini": primary,
-        "llama-3.1-8b-instant": fallback,
-    }[model_id]):
+    with patch.object(model, "_get_model", side_effect=lambda slot: {
+        "groq:compound-mini": primary,
+        "groq:llama-3.1-8b-instant": fallback,
+    }[slot.label]):
         result = model.generate([{"role": "user", "content": "hello"}])
 
     assert result.content == "ok"
@@ -141,15 +141,15 @@ def test_groq_fallback_model_switches_after_hard_limit():
         api_base="https://api.groq.com/openai/v1",
     )
 
-    with patch.object(model, "_get_model", side_effect=lambda model_id: {
-        "scout": primary,
-        "compound": fallback,
-    }[model_id]):
+    with patch.object(model, "_get_model", side_effect=lambda slot: {
+        "groq:scout": primary,
+        "groq:compound": fallback,
+    }[slot.label]):
         result = model.generate([{"role": "user", "content": "hello"}])
 
     assert result.content == "42"
     assert model.active_model_id == "compound"
-    assert "scout" in model._exhausted
+    assert "groq:scout" in model._exhausted
 
 
 def test_groq_fallback_model_raises_when_chain_exhausted():
@@ -209,10 +209,10 @@ def test_groq_fallback_model_switches_on_tpd_without_retry():
         api_base="https://api.groq.com/openai/v1",
     )
 
-    with patch.object(model, "_get_model", side_effect=lambda model_id: {
-        "scout": primary,
-        "compound": fallback,
-    }[model_id]):
+    with patch.object(model, "_get_model", side_effect=lambda slot: {
+        "groq:scout": primary,
+        "groq:compound": fallback,
+    }[slot.label]):
         result = model.generate([{"role": "user", "content": "hello"}])
 
     assert result.content == "ok"

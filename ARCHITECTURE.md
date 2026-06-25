@@ -154,11 +154,12 @@ The same agent code runs locally and on the Space, but the **LLM backend** chang
 |-------|-----------------|-----|
 | **Your machine** | llama.cpp or Ollama | Local server, no cloud credits |
 | **HF Space** | Groq (if `GROQ_API_KEY` set) | Fast cloud API, free tier; throttled + auto-retry on 429 |
+| **HF Space fallback** | Cerebras → Google Gemini | When Groq limits hit; add keys only — models are chosen automatically |
 | **HF Space fallback** | Hugging Face Inference | Needs `HF_TOKEN`; monthly credits often run out (402 error) |
 
-Set `LLM_PROVIDER` explicitly to override: `ollama`, `llamacpp`, `groq`, or `hf`.
+Set `LLM_PROVIDER` explicitly to override: `ollama`, `llamacpp`, `groq`, `cerebras`, `google`, or `hf`.
 
-On Groq, **`GROQ_FALLBACK_ENABLED=1`** rotates through large-context free models when limits hit. **`context_length_exceeded`** and **413/429 rate limits** skip to the next model immediately (default **5s** between calls).
+**Provider rotation** (`PROVIDER_FALLBACK_ENABLED=1`, default on): Groq models first, then Cerebras, then Gemini. Order via `PROVIDER_FALLBACK_ORDER=groq,cerebras,google`. Hard limits (TPD, 413, context) skip to the next slot immediately (default **5s** between calls).
 
 ---
 
@@ -183,6 +184,8 @@ Final_Assignment_Template/
 │   └── artifacts/writer.py← plan/notes/evidence files
 ├── tools.py               ← base tools (search, files, audio, …)
 ├── model_provider.py      ← LLM backend selection
+├── provider_chain.py      ← cross-provider fallback (Groq → Cerebras → Gemini)
+├── groq_model.py          ← throttling, retry, Groq model chain
 ├── scoring.py             ← normalize_answer
 ├── file_resolver.py       ← download attachments from scoring API
 ├── app.py                 ← Gradio Space UI
@@ -208,9 +211,11 @@ See `.env.example` for the full list. The most important knobs:
 | `LLM_PROVIDER` | Which LLM backend to use |
 | `OLLAMA_MODEL` / `GROQ_API_KEY` | Local or Space model access |
 | `GROQ_MODEL` | Groq model id (Space default: Scout 17B) |
-| `GROQ_FALLBACK_ENABLED` | Auto-switch models after hard limits (default 1) |
-| `GROQ_MODEL_FALLBACK_CHAIN` | Comma-separated fallback model ids |
-| `GROQ_MIN_REQUEST_INTERVAL` | Seconds between Groq API calls (default 3) |
+| `GROQ_FALLBACK_ENABLED` | Auto-switch Groq models after hard limits (default 1) |
+| `GROQ_MODEL_FALLBACK_CHAIN` | Comma-separated Groq fallback model ids |
+| `CEREBRAS_API_KEY` / `GOOGLE_API_KEY` | Cross-provider fallback after Groq (no model config needed) |
+| `PROVIDER_FALLBACK_ORDER` | Provider order, e.g. `groq,cerebras,google` |
+| `GROQ_MIN_REQUEST_INTERVAL` | Seconds between cloud API calls (default 5) |
 | `GROQ_MAX_RETRIES` | Retries on 429 (default 5) |
 | `HF_USERNAME` | Your HF username for API submit |
 | `PIPELINE_DEPTH` | `minimal` / `standard` / `full` |

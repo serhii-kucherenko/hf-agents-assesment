@@ -180,9 +180,10 @@ with gr.Blocks() as demo:
         **Instructions (HF Space):**
 
         1. Add **`GROQ_API_KEY`** in Space Settings → Secrets (free at [console.groq.com](https://console.groq.com)).
-        2. Optional **`GROQ_MODEL`** — if unset, Space uses Scout 17B. On hard limits the agent rotates through the fallback chain automatically.
-        3. Optional: **`GROQ_MIN_REQUEST_INTERVAL=3`** — pause between API calls to reduce 429 errors.
-        4. Log in with Hugging Face, then click **Run Evaluation & Submit All Answers**.
+        2. Optional **`CEREBRAS_API_KEY`** and **`GOOGLE_API_KEY`** — agent rotates to them when Groq limits hit.
+        3. Optional **`GROQ_MODEL`** — if unset, Space uses Scout 17B. On hard limits the agent rotates through models and providers automatically.
+        4. Optional: **`GROQ_MIN_REQUEST_INTERVAL=5`** — pause between API calls to reduce 429 errors.
+        5. Log in with Hugging Face, then click **Run Evaluation & Submit All Answers**.
 
         **No Groq key?** Run locally instead: `python run_local.py --mode score` with Ollama.
         """
