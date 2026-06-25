@@ -72,7 +72,10 @@ def _normalize_cerebras_model_id(model_name: str) -> str:
         "qwen-3-32b": "qwen-3-32b",
     }
     cleaned = model_name.strip()
-    return aliases.get(cleaned, cleaned)
+    if cleaned.startswith("cerebras/"):
+        cleaned = cleaned[len("cerebras/") :]
+    cleaned = aliases.get(cleaned, cleaned)
+    return f"cerebras/{cleaned}"
 
 
 def _normalize_google_model_id(model_name: str) -> str:
@@ -143,17 +146,29 @@ def build_provider_fallback_chain(normalize_groq: Callable[[str], str]) -> list[
         "cerebras": _cerebras_slots,
         "google": _google_slots,
     }
+    order = provider_fallback_order()
+    groq_slots = _groq_slots(normalize_groq)
+    # Groq is always primary when its key is set (ignore PROVIDER_FALLBACK_ORDER for groq).
+    providers_after = [provider for provider in order if provider != "groq"]
+    if not groq_slots:
+        providers_after = order
+
     slots: list[ModelSlot] = []
     seen: set[str] = set()
-    for provider in provider_fallback_order():
-        builder = builders.get(provider)
-        if builder is None:
-            continue
-        for slot in builder(normalize_groq):
+
+    def add_slots(new_slots: list[ModelSlot]) -> None:
+        for slot in new_slots:
             if slot.label in seen:
                 continue
             slots.append(slot)
             seen.add(slot.label)
+
+    add_slots(groq_slots)
+    for provider in providers_after:
+        builder = builders.get(provider)
+        if builder is None:
+            continue
+        add_slots(builder(normalize_groq))
     return slots
 
 

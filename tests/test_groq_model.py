@@ -65,6 +65,12 @@ def test_groq_fallback_model_skips_context_limit():
     assert model.active_model_id == "qwen/qwen3-32b"
 
 
+def test_is_groq_unavailable_model_error_litellm_provider():
+    error = RuntimeError("LLM Provider NOT provided. You passed model=qwen-3-32b")
+    assert is_groq_unavailable_model_error(error)
+    assert is_groq_fallback_error(error)
+
+
 def test_is_groq_unavailable_model_error():
     error = RuntimeError("The model `compound-mini` does not exist or you do not have access to it.")
     assert is_groq_unavailable_model_error(error)

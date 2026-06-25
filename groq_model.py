@@ -46,6 +46,9 @@ UNAVAILABLE_MODEL_PATTERNS = (
     "model_not_found",
     "does not exist",
     "do not have access",
+    "llm provider not provided",
+    "invalid model",
+    "unknown model",
 )
 
 CONTEXT_LIMIT_PATTERNS = (
