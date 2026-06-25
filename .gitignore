@@ -3,6 +3,6 @@ __pycache__/
 *.pyc
 .env
 eval/results/
-artifacts/
+/artifacts/
 memory/*.jsonl
 models/
