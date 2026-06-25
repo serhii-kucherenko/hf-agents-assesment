@@ -33,16 +33,7 @@ Grading uses **exact match** against the course API — answers are normalized (
 Question → [optional strategy hints] → [optional planner] → CodeAgent + tools → Verifier → Answer → Course API
 ```
 
-| Component | Role |
-|-----------|------|
-| `agent/gaia_agent.py` | Public entry point (`GaiaAgent`) |
-| `agent/pipeline.py` | Orchestrates retriever, planner, agent, verifier, voting |
-| `agent/agent_runner.py` | smolagents `CodeAgent` loop |
-| `agent/tools.py` | Extended tool set (PDF, OCR, arxiv, math, etc.) |
-| `agent/verifier.py` | Format checks + answer extraction |
-| `app.py` | Gradio UI for Space submission |
-| `run_local.py` | Local runner and score check |
-| `eval/` | Fixtures and course API client for regression tests |
+Main modules: `agent/gaia_agent.py` (entry point), `agent/pipeline.py`, `agent/agent_runner.py`, `agent/tools.py`, `agent/verifier.py`, `app.py`, `run_local.py`, and `eval/` for tests.
 
 **Pipeline depth** (`PIPELINE_DEPTH` env var):
 
@@ -124,22 +115,9 @@ After scoring **≥30%** on the course API:
 
 Local `run_local.py --mode score` counts — you do not need a successful Space run if the API already has your score under your HF username.
 
-## Configuration reference
+## Configuration
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `LLM_PROVIDER` | `llamacpp` locally; Groq on Space if `GROQ_API_KEY` set | Model backend |
-| `OLLAMA_MODEL` | — | Ollama model name |
-| `GROQ_API_KEY` | — | Groq API key (Space) |
-| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model id |
-| `HF_USERNAME` | — | Your HF username for course submit |
-| `PIPELINE_DEPTH` | `minimal` | Pipeline complexity |
-| `THINK_MODE` | `auto` | Per-question reasoning: `auto`, `on`, `off` |
-| `AGENT_MAX_STEPS` | `12` | Max CodeAgent steps per question |
-| `RETRIEVER_ENABLED` | `0` | Strategy hints from past runs |
-| `SELF_EVOLVE` | `0` | Write learning records after graded eval |
-
-See `.env.example` for llama.cpp and full options.
+See `.env.example` for all options (LLM provider, pipeline depth, think mode, Groq/Ollama/llama.cpp settings).
 
 ## Data policy
 
