@@ -12,6 +12,7 @@ from groq_model import (
     groq_min_request_interval,
     groq_requests_per_minute,
     groq_retry_wait_seconds,
+    is_groq_context_limit_error,
     is_groq_quota_exhausted_error,
     is_groq_unavailable_model_error,
     is_groq_fallback_error,
@@ -30,8 +31,38 @@ def test_default_groq_fallback_chain_includes_free_tier_models():
     assert chain[0] == GROQ_DEFAULT_SPACE_MODEL
     assert "llama-3.1-8b-instant" in chain
     assert "openai/gpt-oss-20b" in chain
-    assert "allam-2-7b" in chain
-    assert len(chain) >= 8
+    assert "llama-3.1-8b-instant" in chain
+    assert "openai/gpt-oss-20b" in chain
+    assert "allam-2-7b" not in chain
+    assert len(chain) >= 7
+
+
+def test_is_groq_context_limit_error():
+    error = RuntimeError("context_length_exceeded: reduce the length of the messages")
+    assert is_groq_context_limit_error(error)
+    assert is_groq_fallback_error(error)
+
+
+def test_groq_fallback_model_skips_context_limit():
+    primary = MagicMock()
+    fallback = MagicMock()
+    primary.generate.side_effect = RuntimeError("context_length_exceeded")
+    fallback.generate.return_value = ChatMessage(role=MessageRole.ASSISTANT, content="ok")
+
+    model = GroqFallbackModel(
+        model_ids=["allam-2-7b", "qwen/qwen3-32b"],
+        api_key="test",
+        api_base="https://api.groq.com/openai/v1",
+    )
+
+    with patch.object(model, "_get_model", side_effect=lambda model_id: {
+        "allam-2-7b": primary,
+        "qwen/qwen3-32b": fallback,
+    }[model_id]):
+        result = model.generate([{"role": "user", "content": "hello"}])
+
+    assert result.content == "ok"
+    assert model.active_model_id == "qwen/qwen3-32b"
 
 
 def test_is_groq_unavailable_model_error():
@@ -63,6 +94,10 @@ def test_groq_fallback_model_skips_missing_model():
     assert result.content == "ok"
     assert primary.generate.call_count == 1
     assert model.active_model_id == "llama-3.1-8b-instant"
+
+
+def test_is_hard_groq_limit_error_413():
+    assert is_hard_groq_limit_error(RuntimeError("413 rate_limit_exceeded"))
 
 
 def test_is_hard_groq_limit_error_rate_limit():

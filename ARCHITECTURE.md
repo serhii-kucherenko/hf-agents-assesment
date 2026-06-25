@@ -158,7 +158,7 @@ The same agent code runs locally and on the Space, but the **LLM backend** chang
 
 Set `LLM_PROVIDER` explicitly to override: `ollama`, `llamacpp`, `groq`, or `hf`.
 
-On Groq, **`GROQ_FALLBACK_ENABLED=1`** rotates through other free chat models when limits hit: **8B-instant → Qwen3-32B → Allam-2-7B → GPT-OSS-20B → Qwen3.6-27B → GPT-OSS-120B → 70B**. Missing or exhausted models are skipped immediately.
+On Groq, **`GROQ_FALLBACK_ENABLED=1`** rotates through large-context free models when limits hit. **`context_length_exceeded`** and **413/429 rate limits** skip to the next model immediately (default **5s** between calls).
 
 ---
 

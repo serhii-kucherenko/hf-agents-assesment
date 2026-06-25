@@ -25,16 +25,13 @@ GROQ_RETRY_AFTER_HMS_PATTERN = re.compile(
 GROQ_DEFAULT_SPACE_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 GROQ_DEFAULT_LOCAL_MODEL = "llama-3.3-70b-versatile"
 
-# Free-tier Groq chat models (CodeAgent-compatible), separate quota pools.
-# Ordered: high daily headroom first, then stronger models. No groq/compound* —
-# wrong id via LiteLLM and incompatible with custom client tools.
+# Large-context free-tier chat models only (multi-step agent traces exceed small windows).
 DEFAULT_GROQ_FALLBACK_CHAIN = (
-    "llama-3.1-8b-instant",
     "qwen/qwen3-32b",
-    "allam-2-7b",
     "openai/gpt-oss-20b",
-    "qwen/qwen3.6-27b",
     "openai/gpt-oss-120b",
+    "llama-3.1-8b-instant",
+    "qwen/qwen3.6-27b",
     "llama-3.3-70b-versatile",
 )
 
@@ -51,11 +48,19 @@ UNAVAILABLE_MODEL_PATTERNS = (
     "do not have access",
 )
 
+CONTEXT_LIMIT_PATTERNS = (
+    "context_length_exceeded",
+    "context window",
+    "maximum context",
+    "too many tokens",
+    "reduce the length",
+)
+
 T = TypeVar("T")
 
 
 def groq_min_request_interval() -> float:
-    raw = os.getenv("GROQ_MIN_REQUEST_INTERVAL", "3")
+    raw = os.getenv("GROQ_MIN_REQUEST_INTERVAL", "5")
     try:
         return max(float(raw), 0.0)
     except ValueError:
@@ -133,25 +138,64 @@ def is_groq_unavailable_model_error(error: BaseException) -> bool:
     return any(pattern in message for pattern in UNAVAILABLE_MODEL_PATTERNS)
 
 
+def is_groq_context_limit_error(error: BaseException) -> bool:
+    """Prompt too long for this model — try a larger-context fallback."""
+    message = str(error).lower()
+    return any(pattern in message for pattern in CONTEXT_LIMIT_PATTERNS)
+
+
+def is_groq_rate_limit_error(error: BaseException) -> bool:
+    """TPM/RPM style limits including Groq 413 responses."""
+    if is_rate_limit_error(error):
+        return True
+    message = str(error).lower()
+    return any(
+        pattern in message
+        for pattern in ("rate_limit_exceeded", "rate limit reached", "too many requests", "413", "429")
+    )
+
+
+def is_groq_soft_tpm_error(error: BaseException) -> bool:
+    """Brief TPM burst — worth retrying on the same model."""
+    if (
+        is_groq_quota_exhausted_error(error)
+        or is_groq_context_limit_error(error)
+        or is_groq_unavailable_model_error(error)
+    ):
+        return False
+    message = str(error).lower()
+    if "413" in message:
+        return False
+    if not is_groq_rate_limit_error(error):
+        return False
+    wait = parse_groq_retry_seconds(str(error))
+    if wait is not None:
+        return wait <= groq_max_retry_wait()
+    return "429" in message and "rate_limit_exceeded" not in message
+
+
 def is_groq_fallback_error(error: BaseException) -> bool:
     """Switch to the next model in the chain (do not retry the same model)."""
-    return is_groq_unavailable_model_error(error) or is_hard_groq_limit_error(error)
+    return (
+        is_groq_unavailable_model_error(error)
+        or is_groq_context_limit_error(error)
+        or is_hard_groq_limit_error(error)
+    )
 
 
 def is_hard_groq_limit_error(error: BaseException) -> bool:
     """True when the current model cannot serve this request (switch to fallback)."""
     if is_groq_quota_exhausted_error(error):
         return True
-    if is_rate_limit_error(error):
-        return True
-    message = str(error).lower()
-    hard_patterns = (
-        "rate_limit_exceeded",
-        "rate limit reached",
-        "too many requests",
-        "429",
-    )
-    return any(pattern in message for pattern in hard_patterns)
+    return is_groq_rate_limit_error(error)
+
+
+def _groq_failure_reason(error: BaseException) -> str:
+    if is_groq_unavailable_model_error(error):
+        return "unavailable"
+    if is_groq_context_limit_error(error):
+        return "context too long"
+    return "limit hit"
 
 
 def build_groq_model_chain(normalize: Callable[[str], str]) -> list[str]:
@@ -177,9 +221,9 @@ def call_with_groq_retry(fn: Callable[..., T], **kwargs: Any) -> T:
             return fn(**kwargs)
         except Exception as error:
             last_error = error
-            if is_groq_quota_exhausted_error(error) or is_groq_unavailable_model_error(error):
+            if not is_groq_soft_tpm_error(error):
                 raise
-            if not is_rate_limit_error(error) or attempt >= max_attempts:
+            if attempt >= max_attempts:
                 raise
             wait = groq_retry_wait_seconds(error, attempt)
             if wait > groq_max_retry_wait():
@@ -267,6 +311,8 @@ class GroqLiteLLMModel(LiteLLMModel):
 class GroqFallbackModel(Model):
     """Try Groq models in order; switch when a model hits a hard rate or quota limit."""
 
+    _last_request_at: float = 0.0
+
     def __init__(
         self,
         model_ids: list[str],
@@ -306,6 +352,16 @@ class GroqFallbackModel(Model):
             )
         return self._models[model_id]
 
+    def _shared_throttle(self) -> None:
+        interval = groq_min_request_interval()
+        if interval <= 0:
+            return
+        now = time.time()
+        elapsed = now - GroqFallbackModel._last_request_at
+        if elapsed < interval:
+            time.sleep(interval - elapsed)
+        GroqFallbackModel._last_request_at = time.time()
+
     def _advance_after_failure(self, model_id: str, error: BaseException) -> bool:
         self._exhausted.add(model_id)
         while self._active_index < len(self.model_ids):
@@ -313,7 +369,7 @@ class GroqFallbackModel(Model):
                 break
             self._active_index += 1
 
-        reason = "unavailable" if is_groq_unavailable_model_error(error) else "limit hit"
+        reason = _groq_failure_reason(error)
         next_index = self._active_index
         while next_index < len(self.model_ids):
             candidate = self.model_ids[next_index]
@@ -351,6 +407,7 @@ class GroqFallbackModel(Model):
 
             self.model_id = model_id
             try:
+                self._shared_throttle()
                 return self._get_model(model_id).generate(
                     messages,
                     stop_sequences=stop_sequences,
