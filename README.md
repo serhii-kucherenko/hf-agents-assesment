@@ -16,7 +16,7 @@ hf_oauth_expiration_minutes: 480
 A **smolagents**-based agent for the [Unit 4 final assignment](https://huggingface.co/learn/agents-course/unit4/introduction): answer 20 Level-1 GAIA questions via the course scoring API and reach **≥30%** for the certificate.
 
 **Live Space:** [ken2ki/Final_Assignment_Template](https://huggingface.co/spaces/ken2ki/Final_Assignment_Template)  
-**Source:** [github.com/serhii-kucherenko/Final_Assignment_Template](https://github.com/serhii-kucherenko/Final_Assignment_Template)
+**Source:** [github.com/serhii-kucherenko/hf-agents-assesment](https://github.com/serhii-kucherenko/hf-agents-assesment)
 
 ## What it does
 
@@ -54,8 +54,8 @@ Optional system tools: `tesseract` (OCR), `ffmpeg` (audio).
 ## Setup (local)
 
 ```bash
-git clone https://github.com/serhii-kucherenko/Final_Assignment_Template.git
-cd Final_Assignment_Template
+git clone https://github.com/serhii-kucherenko/hf-agents-assesment.git
+cd hf-agents-assesment
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
