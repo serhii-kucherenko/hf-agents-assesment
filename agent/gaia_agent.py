@@ -24,5 +24,4 @@ class GaiaAgent:
             file_error=file_error,
             task_id=task_id,
         )
-        print(f"Agent answer: {answer[:120]}")
         return answer

@@ -18,6 +18,7 @@ from eval.course_client import (
     fetch_random_question,
     submit_answers,
 )
+from eval.progress import log_batch_done, log_batch_start, log_question_done, log_question_start
 from file_resolver import resolve_task_attachment
 from scoring import course_score_percent
 
@@ -139,14 +140,17 @@ def main() -> None:
         return
 
     questions = fetch_course_questions(API_URL)
+    total = len(questions)
+    log_batch_start(total)
     results: list[dict] = []
     answers_payload: list[dict] = []
+    succeeded = 0
 
     with tempfile.TemporaryDirectory(prefix="gaia_files_") as temp_dir:
         download_dir = Path(temp_dir)
         for index, item in enumerate(questions, start=1):
             task_id = item["task_id"]
-            print(f"\n[{index}/{len(questions)}] {item['question'][:90]}...")
+            log_question_start(index, total, item["question"], task_id)
             try:
                 submitted = run_question(agent, item, download_dir)
                 results.append(
@@ -160,7 +164,8 @@ def main() -> None:
                 answers_payload.append(
                     {"task_id": task_id, "submitted_answer": submitted}
                 )
-                print(f"ANSWER: {submitted!r}")
+                log_question_done(index, total, submitted)
+                succeeded += 1
             except Exception as error:
                 results.append(
                     {
@@ -170,7 +175,9 @@ def main() -> None:
                         "correct": False,
                     }
                 )
-                print("ERROR:", error)
+                log_question_done(index, total, "", error=str(error))
+
+    log_batch_done(total, succeeded)
 
     if args.mode == "score":
         submit_result = grade_via_submit(results, answers_payload)

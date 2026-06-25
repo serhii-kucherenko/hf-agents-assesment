@@ -8,6 +8,7 @@ import requests
 from dotenv import load_dotenv
 
 from agent import GaiaAgent
+from eval.progress import log_batch_done, log_batch_start, log_question_done, log_question_start
 from file_resolver import resolve_task_attachment
 
 load_dotenv()
@@ -69,20 +70,26 @@ def run_and_submit_all(profile: gr.OAuthProfile | None = None):
     except Exception as error:
         return f"An unexpected error occurred fetching questions: {error}", None
 
+    valid_questions = [
+        item
+        for item in questions_data
+        if item.get("task_id") and item.get("question") is not None
+    ]
+    total = len(valid_questions)
+    log_batch_start(total)
+
     results_log = []
     answers_payload = []
-    print(f"Running agent on {len(questions_data)} questions...")
+    succeeded = 0
 
     with tempfile.TemporaryDirectory(prefix="gaia_files_") as temp_dir:
         download_dir = Path(temp_dir)
-        for item in questions_data:
-            task_id = item.get("task_id")
-            question_text = item.get("question")
+        for index, item in enumerate(valid_questions, start=1):
+            task_id = item["task_id"]
+            question_text = item["question"]
             file_name = item.get("file_name") or ""
 
-            if not task_id or question_text is None:
-                print(f"Skipping item with missing task_id or question: {item}")
-                continue
+            log_question_start(index, total, question_text, task_id)
 
             file_path = None
             file_error = None
@@ -107,6 +114,8 @@ def run_and_submit_all(profile: gr.OAuthProfile | None = None):
                         "Submitted Answer": submitted_answer,
                     }
                 )
+                log_question_done(index, total, submitted_answer)
+                succeeded += 1
             except Exception as error:
                 print(f"Error running agent on task {task_id}: {error}")
                 results_log.append(
@@ -116,6 +125,9 @@ def run_and_submit_all(profile: gr.OAuthProfile | None = None):
                         "Submitted Answer": f"AGENT ERROR: {error}",
                     }
                 )
+                log_question_done(index, total, "", error=str(error))
+
+    log_batch_done(total, succeeded)
 
     if not answers_payload:
         return "Agent did not produce any answers to submit.", pd.DataFrame(results_log)
@@ -168,8 +180,9 @@ with gr.Blocks() as demo:
         **Instructions (HF Space):**
 
         1. Add **`GROQ_API_KEY`** in Space Settings → Secrets (free at [console.groq.com](https://console.groq.com)).
-        2. Optional: **`GROQ_MODEL`** — default is `llama-3.3-70b-versatile`. Do not use bare `gpt-oss-20b`; use `openai/gpt-oss-20b` if you want GPT-OSS.
-        3. Log in with Hugging Face, then click **Run Evaluation & Submit All Answers**.
+        2. Optional **`GROQ_MODEL`** — if unset, Space uses Scout 17B. On hard limits the agent rotates through the fallback chain automatically.
+        3. Optional: **`GROQ_MIN_REQUEST_INTERVAL=3`** — pause between API calls to reduce 429 errors.
+        4. Log in with Hugging Face, then click **Run Evaluation & Submit All Answers**.
 
         **No Groq key?** Run locally instead: `python run_local.py --mode score` with Ollama.
         """

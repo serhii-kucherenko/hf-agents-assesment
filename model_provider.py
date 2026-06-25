@@ -7,6 +7,14 @@ import os
 import requests
 from smolagents import InferenceClientModel, LiteLLMModel, Model, OpenAIServerModel
 
+from groq_model import (
+    GroqFallbackModel,
+    GroqLiteLLMModel,
+    build_groq_model_chain,
+    default_groq_model_id,
+    groq_fallback_enabled,
+)
+
 
 def get_llm_provider() -> str:
     explicit = os.getenv("LLM_PROVIDER", "").strip().lower()
@@ -57,6 +65,8 @@ def _normalize_groq_model_id(model_name: str) -> str:
         "gpt-oss-120b": "openai/gpt-oss-120b",
         "llama-3.3-70b": "llama-3.3-70b-versatile",
         "llama3.3-70b-versatile": "llama-3.3-70b-versatile",
+        "llama-4-scout": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "llama-4-scout-17b": "meta-llama/llama-4-scout-17b-16e-instruct",
     }
     cleaned = model_name.strip()
     return aliases.get(cleaned, cleaned)
@@ -107,12 +117,19 @@ def build_model() -> Model:
                 "Get a free key at https://console.groq.com — "
                 "this bypasses Hugging Face inference credits."
             )
-        model_name = _normalize_groq_model_id(
-            os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-        )
+        model_chain = build_groq_model_chain(_normalize_groq_model_id)
         api_base = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
+        if groq_fallback_enabled() and len(model_chain) > 1:
+            print(f"Using Groq with fallback at {api_base}")
+            return GroqFallbackModel(
+                model_ids=model_chain,
+                api_key=api_key,
+                api_base=api_base,
+                temperature=0,
+            )
+        model_name = model_chain[0]
         print(f"Using Groq model {model_name} at {api_base}")
-        return LiteLLMModel(
+        return GroqLiteLLMModel(
             model_id=model_name,
             api_base=api_base,
             api_key=api_key,
