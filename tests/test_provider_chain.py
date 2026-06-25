@@ -27,9 +27,8 @@ def test_build_provider_chain_default_order_cerebras_first():
         chain = build_provider_fallback_chain(_normalize)
 
     labels = [slot.label for slot in chain]
-    assert labels[0] == "cerebras:cerebras/qwen-3-32b"
-    assert "cerebras:cerebras/llama-3.3-70b" in labels
-    assert "cerebras:cerebras/llama3.1-8b" in labels
+    assert labels[0] == "cerebras:cerebras/gpt-oss-120b"
+    assert "cerebras:cerebras/zai-glm-4.7" in labels
     assert any(label.startswith("google:gemini/") for label in labels)
     assert any(label.startswith("groq:") for label in labels)
 
@@ -73,7 +72,8 @@ def test_cerebras_before_groq_in_default_chain():
 def test_cerebras_model_id_uses_litellm_prefix():
     from provider_chain import _normalize_cerebras_model_id
 
-    assert _normalize_cerebras_model_id("qwen-3-32b") == "cerebras/qwen-3-32b"
+    assert _normalize_cerebras_model_id("gpt-oss-120b") == "cerebras/gpt-oss-120b"
+    assert _normalize_cerebras_model_id("glm-4.7") == "cerebras/zai-glm-4.7"
 
 
 def test_reset_for_question_clears_exhaustion():
@@ -107,7 +107,7 @@ def test_provider_fallback_model_switches_on_litellm_provider_error():
         slots=[
             ModelSlot(
                 provider="cerebras",
-                model_id="cerebras/qwen-3-32b",
+                model_id="cerebras/gpt-oss-120b",
                 api_key="csk",
                 api_base=None,
             ),
@@ -121,7 +121,7 @@ def test_provider_fallback_model_switches_on_litellm_provider_error():
     )
 
     with patch.object(model, "_get_model", side_effect=lambda slot: {
-        "cerebras:cerebras/qwen-3-32b": primary,
+        "cerebras:cerebras/gpt-oss-120b": primary,
         "groq:scout": fallback,
     }[slot.label]):
         result = model.generate([{"role": "user", "content": "hello"}])
@@ -153,7 +153,7 @@ def test_provider_fallback_model_switches_provider():
             ),
             ModelSlot(
                 provider="cerebras",
-                model_id="cerebras/qwen-3-32b",
+                model_id="cerebras/gpt-oss-120b",
                 api_key="csk",
                 api_base=None,
             ),
@@ -162,9 +162,9 @@ def test_provider_fallback_model_switches_provider():
 
     with patch.object(model, "_get_model", side_effect=lambda slot: {
         "groq:scout": primary,
-        "cerebras:cerebras/qwen-3-32b": fallback,
+        "cerebras:cerebras/gpt-oss-120b": fallback,
     }[slot.label]):
         result = model.generate([{"role": "user", "content": "hello"}])
 
     assert result.content == "ok"
-    assert model.active_model_id == "cerebras/qwen-3-32b"
+    assert model.active_model_id == "cerebras/gpt-oss-120b"

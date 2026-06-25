@@ -19,11 +19,11 @@ from groq_model import (
     is_groq_fallback_error,
 )
 
-DEFAULT_CEREBRAS_MODEL = "qwen-3-32b"
+# Models available on typical Cerebras free accounts (OpenAI GPT OSS, Z.ai GLM 4.7).
+DEFAULT_CEREBRAS_MODEL = "gpt-oss-120b"
 DEFAULT_CEREBRAS_MODEL_CHAIN = (
-    "qwen-3-32b",
-    "llama-3.3-70b",
-    "llama3.1-8b",
+    "gpt-oss-120b",
+    "zai-glm-4.7",
 )
 DEFAULT_GOOGLE_MODEL = "gemini-2.5-flash-lite"
 
@@ -154,9 +154,21 @@ def google_api_key() -> str | None:
     return os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or None
 
 
+def build_cerebras_model_chain() -> tuple[str, ...]:
+    raw = os.getenv("CEREBRAS_MODEL_FALLBACK_CHAIN", "").strip()
+    if raw:
+        return tuple(part.strip() for part in raw.split(",") if part.strip())
+    return DEFAULT_CEREBRAS_MODEL_CHAIN
+
+
 def _normalize_cerebras_model_id(model_name: str) -> str:
     """LiteLLM requires cerebras/ prefix (no custom api_base)."""
     aliases = {
+        "gpt-oss": "gpt-oss-120b",
+        "openai-gpt-oss": "gpt-oss-120b",
+        "glm-4.7": "zai-glm-4.7",
+        "glm-4.6": "zai-glm-4.6",
+        "z.ai-glm-4.7": "zai-glm-4.7",
         "llama-3.3-70b": "llama-3.3-70b",
         "llama3.3-70b": "llama-3.3-70b",
         "llama-3.1-8b": "llama3.1-8b",
@@ -210,7 +222,7 @@ def _cerebras_slots(_normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
     api_key = _strip_key(os.getenv("CEREBRAS_API_KEY"))
     if not api_key:
         return []
-    model_ids = [_normalize_cerebras_model_id(model_id) for model_id in DEFAULT_CEREBRAS_MODEL_CHAIN]
+    model_ids = [_normalize_cerebras_model_id(model_id) for model_id in build_cerebras_model_chain()]
     return [
         ModelSlot(provider="cerebras", model_id=model_id, api_key=api_key, api_base=None)
         for model_id in model_ids
