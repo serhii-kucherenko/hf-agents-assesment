@@ -95,6 +95,7 @@ def run_and_submit_all(profile: gr.OAuthProfile | None = None):
                     question_text,
                     file_path=file_path,
                     file_error=file_error,
+                    task_id=task_id,
                 )
                 answers_payload.append(
                     {"task_id": task_id, "submitted_answer": submitted_answer}

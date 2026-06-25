@@ -1,0 +1,7 @@
+# Optional local-only dependencies (llama.cpp is a system install, not pip).
+#
+# Install llama.cpp with llama-server, then:
+#   huggingface-cli download bartowski/Qwen_Qwen3-14B-GGUF \
+#     Qwen3-14B-Q4_K_M.gguf --local-dir ./models/qwen3-14b
+#   llama-server -m ./models/qwen3-14b/Qwen3-14B-Q4_K_M.gguf \
+#     --host 127.0.0.1 --port 8080 -c 16384 --jinja

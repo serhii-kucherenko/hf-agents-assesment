@@ -1,9 +1,8 @@
-"""GAIA benchmark agent built with smolagents."""
+"""Run the smolagents CodeAgent with all GAIA tools."""
 
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,21 +10,27 @@ from smolagents import CodeAgent
 
 load_dotenv()
 
-from model_provider import build_model, get_llm_provider, use_markdown_code_blocks
-from scoring import normalize_answer
-from tools import build_tools
+from agent.tools import build_agent_tools
+from agent.think_mode import should_use_think_mode
+from model_provider import (
+    apply_think_mode,
+    build_model,
+    get_llm_provider,
+    supports_think_toggle,
+    use_markdown_code_blocks,
+)
 
-MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "8"))
+MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "12"))
 
-# Adapted from the official GAIA leaderboard prompt:
-# https://huggingface.co/spaces/gaia-benchmark/leaderboard
 GAIA_SYSTEM_PROMPT = """
 You are a general AI assistant solving GAIA Level 1 questions.
 
 Use tools and Python code whenever needed:
 - web search or Wikipedia for factual questions
-- file tools for attachments
+- arxiv_search for academic papers
+- file tools for attachments (PDF, Excel, CSV, images, audio)
 - get_youtube_transcript for YouTube links
+- execute_code for local Python or bash computation
 
 Every action must be valid Python inside a code block.
 When done, call final_answer("...") with ONLY the answer value.
@@ -45,35 +50,12 @@ Examples:
 """.strip()
 
 
-def _extract_answer(raw_result: str) -> str:
-    text = str(raw_result).strip()
-
-    final_match = re.search(
-        r'final_answer\s*\(\s*["\'](.+?)["\']\s*\)',
-        text,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-    if final_match:
-        return normalize_answer(final_match.group(1))
-
-    if len(text) < 200 and "def " not in text and "import " not in text:
-        return normalize_answer(text)
-
-    if "```" in text:
-        code_blocks = re.findall(r"```(?:\w*\n)?(.*?)```", text, flags=re.DOTALL)
-        for block in reversed(code_blocks):
-            block_match = re.search(
-                r'final_answer\s*\(\s*["\'](.+?)["\']\s*\)',
-                block,
-                flags=re.DOTALL | re.IGNORECASE,
-            )
-            if block_match:
-                return normalize_answer(block_match.group(1))
-
-    return normalize_answer(text)
-
-
-def _build_prompt(question: str, file_path: str | None, file_error: str | None = None) -> str:
+def build_prompt(
+    question: str,
+    file_path: str | None,
+    file_error: str | None = None,
+    extra_sections: str | None = None,
+) -> str:
     parts = [question]
 
     if file_path:
@@ -83,12 +65,14 @@ def _build_prompt(question: str, file_path: str | None, file_error: str | None =
             ".py": "A Python file is attached. Use read_text_file, then run or reason over it.",
             ".xlsx": "An Excel file is attached. Use read_excel_summary.",
             ".xls": "An Excel file is attached. Use read_excel_summary.",
+            ".csv": "A CSV file is attached. Use analyze_csv_file.",
+            ".pdf": "A PDF file is attached. Use read_pdf.",
             ".mp3": "An audio file is attached. Use transcribe_audio.",
             ".wav": "An audio file is attached. Use transcribe_audio.",
-            ".png": "An image file is attached. Use describe_image.",
-            ".jpg": "An image file is attached. Use describe_image.",
-            ".jpeg": "An image file is attached. Use describe_image",
-            ".webp": "An image file is attached. Use describe_image.",
+            ".png": "An image file is attached. Use describe_image or extract_text_from_image.",
+            ".jpg": "An image file is attached. Use describe_image or extract_text_from_image.",
+            ".jpeg": "An image file is attached. Use describe_image or extract_text_from_image.",
+            ".webp": "An image file is attached. Use describe_image or extract_text_from_image.",
         }.get(suffix, "A file is attached. Use the appropriate reading tool.")
         parts.extend([attachment_hint, f"Attached file path: {path.resolve()}"])
     elif file_error:
@@ -97,15 +81,18 @@ def _build_prompt(question: str, file_path: str | None, file_error: str | None =
             f"({file_error}). Answer using web search and other tools instead."
         )
 
+    if extra_sections:
+        parts.append(extra_sections)
+
     return "\n\n".join(parts)
 
 
-class GaiaAgent:
+class AgentRunner:
     def __init__(self):
         model = build_model()
         code_block_tags = "markdown" if use_markdown_code_blocks() else None
         self.agent = CodeAgent(
-            tools=build_tools(),
+            tools=build_agent_tools(),
             model=model,
             instructions=GAIA_SYSTEM_PROMPT,
             max_steps=MAX_STEPS,
@@ -125,19 +112,20 @@ class GaiaAgent:
             ],
         )
         print(
-            f"GaiaAgent ready ({get_llm_provider()}, "
+            f"AgentRunner ready ({get_llm_provider()}, "
             f"code_blocks={'markdown' if code_block_tags else 'xml'})"
         )
 
-    def __call__(
+    def run(
         self,
-        question: str,
+        prompt: str,
+        question: str | None = None,
         file_path: str | None = None,
-        file_error: str | None = None,
+        think: bool | None = None,
     ) -> str:
-        prompt = _build_prompt(question, file_path, file_error)
+        if think is None and question is not None:
+            think = should_use_think_mode(question, file_path)
+        if think is not None and supports_think_toggle():
+            apply_think_mode(self.agent.model, think)
         print(f"Running agent on question (first 80 chars): {prompt[:80]}...")
-        result = self.agent.run(prompt)
-        answer = _extract_answer(result)
-        print(f"Agent answer: {answer[:120]}")
-        return answer
+        return str(self.agent.run(prompt))

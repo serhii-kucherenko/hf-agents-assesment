@@ -1,25 +1,64 @@
-"""Model backend selection for local Ollama vs Hugging Face Inference."""
+"""Model backend: llama.cpp (local), Hugging Face Inference (Space), Ollama (fallback)."""
 
 from __future__ import annotations
 
 import os
 
-from smolagents import InferenceClientModel, LiteLLMModel, Model
+import requests
+from smolagents import InferenceClientModel, LiteLLMModel, Model, OpenAIServerModel
 
 
 def get_llm_provider() -> str:
-    explicit = os.getenv("LLM_PROVIDER", "").strip().lower()
-    if explicit in {"ollama", "hf"}:
-        return explicit
-    if os.getenv("USE_OLLAMA", "").strip().lower() in {"1", "true", "yes"}:
-        return "ollama"
     if os.getenv("SPACE_ID"):
         return "hf"
-    return "ollama"
+
+    explicit = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if explicit in {"llamacpp", "llama_cpp"}:
+        return "llamacpp"
+    if explicit == "hf":
+        return "hf"
+    if explicit == "ollama":
+        return "ollama"
+    if os.getenv("USE_OLLAMA", "").strip().lower() in {"1", "true", "yes"}:
+        return "ollama"
+
+    return "llamacpp"
+
+
+def _resolve_llamacpp_model_id(api_base: str, configured_id: str) -> str:
+    """Match llama-server's advertised model id (often the GGUF path)."""
+    try:
+        response = requests.get(f"{api_base.rstrip('/')}/models", timeout=5)
+        response.raise_for_status()
+        models = response.json().get("data", [])
+        if not models:
+            return configured_id
+        if len(models) == 1:
+            return models[0]["id"]
+        for entry in models:
+            model_id = entry.get("id", "")
+            if configured_id in model_id or model_id.endswith(f"{configured_id}.gguf"):
+                return model_id
+    except requests.RequestException:
+        pass
+    return configured_id
 
 
 def build_model() -> Model:
     provider = get_llm_provider()
+
+    if provider == "llamacpp":
+        api_base = os.getenv("LLAMA_CPP_API_BASE", "http://127.0.0.1:8080/v1")
+        configured_id = os.getenv("LLAMA_CPP_MODEL_ID", "Qwen3-14B-Q4_K_M")
+        model_id = _resolve_llamacpp_model_id(api_base, configured_id)
+        api_key = os.getenv("LLAMA_CPP_API_KEY", "llama")
+        print(f"Using llama.cpp model {model_id} at {api_base}")
+        return OpenAIServerModel(
+            model_id=model_id,
+            api_base=api_base,
+            api_key=api_key,
+            temperature=0,
+        )
 
     if provider == "ollama":
         model_name = os.getenv("OLLAMA_MODEL", "qwen3:14b")
@@ -32,7 +71,7 @@ def build_model() -> Model:
         )
         print(
             f"Using Ollama model {ollama_model_id} at {api_base} "
-            f"(num_ctx={num_ctx}, think=False)"
+            f"(num_ctx={num_ctx}, think=per-question)"
         )
         return LiteLLMModel(
             model_id=ollama_model_id,
@@ -47,13 +86,48 @@ def build_model() -> Model:
     if not token:
         raise RuntimeError(
             "Set HF_TOKEN for Hugging Face Inference, or run locally with "
-            "USE_OLLAMA=1 in your .env file."
+            "LLM_PROVIDER=llamacpp or LLM_PROVIDER=ollama."
         )
     print(f"Using Hugging Face Inference model {model_name}")
     return InferenceClientModel(model_id=model_name, token=token)
 
 
+def build_verifier_model() -> Model:
+    critic = os.getenv("CRITIC_MODEL", "").strip()
+    if critic and critic != os.getenv("LLAMA_CPP_MODEL_ID", ""):
+        if os.getenv("SPACE_ID") or os.getenv("LLM_PROVIDER", "").lower() == "hf":
+            token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
+            return InferenceClientModel(model_id=critic, token=token)
+    return build_model()
+
+
 def use_markdown_code_blocks() -> bool:
-    if get_llm_provider() == "ollama":
+    provider = get_llm_provider()
+    if provider in {"ollama", "llamacpp"}:
         return True
     return os.getenv("AGENT_CODE_BLOCKS", "markdown").strip().lower() == "markdown"
+
+
+def supports_think_toggle() -> bool:
+    provider = get_llm_provider()
+    return provider in {"ollama", "llamacpp"}
+
+
+def apply_think_mode(model: Model, think: bool) -> None:
+    """Set per-request thinking for Ollama (think) or OpenAI-compat (reasoning_effort)."""
+    if not supports_think_toggle():
+        return
+
+    provider = get_llm_provider()
+    if provider == "ollama":
+        model.kwargs["think"] = think
+        print(f"Think mode: {'on' if think else 'off'} (Ollama)")
+        return
+
+    # llama.cpp / OpenAI-compatible (e.g. Qwen3 via llama-server)
+    if think:
+        model.kwargs.pop("reasoning_effort", None)
+        model.kwargs.pop("extra_body", None)
+    else:
+        model.kwargs["reasoning_effort"] = "none"
+    print(f"Think mode: {'on' if think else 'off'} (llama.cpp / OpenAI-compat)")

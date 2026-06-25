@@ -1,0 +1,27 @@
+[
+  {
+    "task_id": "fixture-left-opposite",
+    "question": "If you understand this sentence, write the opposite of the word \"left\" as the answer.",
+    "expected": "right"
+  },
+  {
+    "task_id": "fixture-simple-count",
+    "question": "How many letters are in the word \"cat\"?",
+    "expected": "3"
+  },
+  {
+    "task_id": "fixture-normalize",
+    "question": "Reply with the number forty-two as digits only.",
+    "expected": "42"
+  },
+  {
+    "task_id": "fixture-list",
+    "question": "List the primary colors red, blue, and yellow as a comma-separated list with spaces.",
+    "expected": "red, blue, yellow"
+  },
+  {
+    "task_id": "fixture-strip-quotes",
+    "question": "Answer with the word hello and nothing else.",
+    "expected": "hello"
+  }
+]
