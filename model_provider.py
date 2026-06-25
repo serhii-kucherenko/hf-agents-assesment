@@ -118,13 +118,12 @@ def build_model() -> Model:
             think=False,
         )
 
-    if provider == "groq":
+    if provider in {"groq", "cerebras", "google"}:
         slots = build_provider_fallback_chain(_normalize_groq_model_id)
         if not slots:
             raise RuntimeError(
-                "Set GROQ_API_KEY in Space secrets (or .env locally). "
-                "Get a free key at https://console.groq.com — "
-                "this bypasses Hugging Face inference credits."
+                "Set at least one cloud API key in Space secrets: "
+                "CEREBRAS_API_KEY, GOOGLE_API_KEY (or GEMINI_API_KEY), or GROQ_API_KEY."
             )
         if provider_fallback_enabled() and len(slots) > 1:
             print("Using cloud LLM with cross-provider fallback")
@@ -139,43 +138,6 @@ def build_model() -> Model:
         if slot.api_base:
             kwargs["api_base"] = slot.api_base
         return GroqLiteLLMModel(**kwargs)
-
-    if provider == "cerebras":
-        slots = build_provider_fallback_chain(_normalize_groq_model_id)
-        cerebras_slots = [slot for slot in slots if slot.provider == "cerebras"]
-        if not cerebras_slots:
-            raise RuntimeError(
-                "Set CEREBRAS_API_KEY in Space secrets or .env. "
-                "Get a key at https://cloud.cerebras.ai"
-            )
-        if provider_fallback_enabled() and len(cerebras_slots) > 1:
-            return ProviderFallbackModel(slots=cerebras_slots, temperature=0)
-        slot = cerebras_slots[0]
-        print(f"Using Cerebras model {slot.model_id}")
-        return GroqLiteLLMModel(
-            model_id=slot.model_id,
-            api_base=slot.api_base,
-            api_key=slot.api_key,
-            temperature=0,
-        )
-
-    if provider == "google":
-        slots = build_provider_fallback_chain(_normalize_groq_model_id)
-        google_slots = [slot for slot in slots if slot.provider == "google"]
-        if not google_slots:
-            raise RuntimeError(
-                "Set GOOGLE_API_KEY or GEMINI_API_KEY in Space secrets or .env. "
-                "Get a key at https://aistudio.google.com/apikey"
-            )
-        if provider_fallback_enabled() and len(google_slots) > 1:
-            return ProviderFallbackModel(slots=google_slots, temperature=0)
-        slot = google_slots[0]
-        print(f"Using Google Gemini model {slot.model_id}")
-        return GroqLiteLLMModel(
-            model_id=slot.model_id,
-            api_key=slot.api_key,
-            temperature=0,
-        )
 
     model_name = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
     token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")

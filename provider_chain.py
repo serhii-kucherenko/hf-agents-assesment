@@ -73,7 +73,7 @@ def google_api_key() -> str | None:
 
 
 def _normalize_cerebras_model_id(model_name: str) -> str:
-    """Bare model id — api_base routes to Cerebras (same pattern as Groq)."""
+    """LiteLLM requires cerebras/ prefix (no custom api_base)."""
     aliases = {
         "llama-3.3-70b": "llama-3.3-70b",
         "llama3.3-70b": "llama-3.3-70b",
@@ -85,7 +85,8 @@ def _normalize_cerebras_model_id(model_name: str) -> str:
     cleaned = model_name.strip()
     if cleaned.startswith("cerebras/"):
         cleaned = cleaned[len("cerebras/") :]
-    return aliases.get(cleaned, cleaned)
+    cleaned = aliases.get(cleaned, cleaned)
+    return f"cerebras/{cleaned}"
 
 
 def _normalize_google_model_id(model_name: str) -> str:
@@ -127,10 +128,9 @@ def _cerebras_slots(_normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
     api_key = os.getenv("CEREBRAS_API_KEY")
     if not api_key:
         return []
-    api_base = os.getenv("CEREBRAS_API_BASE", CEREBRAS_API_BASE)
     model_ids = [_normalize_cerebras_model_id(model_id) for model_id in DEFAULT_CEREBRAS_MODEL_CHAIN]
     return [
-        ModelSlot(provider="cerebras", model_id=model_id, api_key=api_key, api_base=api_base)
+        ModelSlot(provider="cerebras", model_id=model_id, api_key=api_key, api_base=None)
         for model_id in model_ids
     ]
 
@@ -146,6 +146,14 @@ def _google_slots(_normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
         api_base=None,
         normalize=_normalize_google_model_id,
     )
+
+
+def _cloud_api_keys_present() -> dict[str, bool]:
+    return {
+        "cerebras": bool(os.getenv("CEREBRAS_API_KEY")),
+        "google": bool(google_api_key()),
+        "groq": bool(os.getenv("GROQ_API_KEY")),
+    }
 
 
 def build_provider_fallback_chain(normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
@@ -165,6 +173,11 @@ def build_provider_fallback_chain(normalize_groq: Callable[[str], str]) -> list[
                 continue
             slots.append(slot)
             seen.add(slot.label)
+
+    keys = _cloud_api_keys_present()
+    missing = [name for name, present in keys.items() if not present]
+    if missing:
+        print(f"Cloud API keys not set (providers skipped): {', '.join(missing)}")
     return slots
 
 
