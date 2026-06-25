@@ -68,6 +68,9 @@ def _normalize_groq_model_id(model_name: str) -> str:
         "llama-4-scout": "meta-llama/llama-4-scout-17b-16e-instruct",
         "llama-4-scout-17b": "meta-llama/llama-4-scout-17b-16e-instruct",
         "qwen3-32b": "qwen/qwen3-32b",
+        "qwen3.6-27b": "qwen/qwen3.6-27b",
+        "allam-2-7b": "allam-2-7b",
+        "llama-3.1-8b": "llama-3.1-8b-instant",
     }
     cleaned = model_name.strip()
     return aliases.get(cleaned, cleaned)

@@ -25,11 +25,16 @@ GROQ_RETRY_AFTER_HMS_PATTERN = re.compile(
 GROQ_DEFAULT_SPACE_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 GROQ_DEFAULT_LOCAL_MODEL = "llama-3.3-70b-versatile"
 
-# Standard Groq chat models (CodeAgent-compatible). Do not use groq/compound* here —
-# LiteLLM sends the wrong id and compound models reject custom client tools.
+# Free-tier Groq chat models (CodeAgent-compatible), separate quota pools.
+# Ordered: high daily headroom first, then stronger models. No groq/compound* —
+# wrong id via LiteLLM and incompatible with custom client tools.
 DEFAULT_GROQ_FALLBACK_CHAIN = (
     "llama-3.1-8b-instant",
     "qwen/qwen3-32b",
+    "allam-2-7b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.6-27b",
+    "openai/gpt-oss-120b",
     "llama-3.3-70b-versatile",
 )
 

@@ -24,6 +24,16 @@ def _normalize(model_name: str) -> str:
     return model_name.strip()
 
 
+def test_default_groq_fallback_chain_includes_free_tier_models():
+    with patch.dict("os.environ", {"GROQ_MODEL": "", "SPACE_ID": "user/space"}, clear=False):
+        chain = build_groq_model_chain(_normalize)
+    assert chain[0] == GROQ_DEFAULT_SPACE_MODEL
+    assert "llama-3.1-8b-instant" in chain
+    assert "openai/gpt-oss-20b" in chain
+    assert "allam-2-7b" in chain
+    assert len(chain) >= 8
+
+
 def test_is_groq_unavailable_model_error():
     error = RuntimeError("The model `compound-mini` does not exist or you do not have access to it.")
     assert is_groq_unavailable_model_error(error)
