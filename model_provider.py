@@ -117,7 +117,6 @@ def build_model() -> Model:
             api_base=api_base,
             api_key=api_key,
             temperature=0,
-            num_ctx=int(os.getenv("GROQ_NUM_CTX", "131072")),
         )
 
     model_name = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
