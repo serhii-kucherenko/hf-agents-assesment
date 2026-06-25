@@ -16,6 +16,7 @@ from tools import (
     read_text_file,
     transcribe_audio,
     wikipedia_search,
+    wikipedia_studio_albums,
 )
 
 
@@ -189,6 +190,7 @@ def build_agent_tools() -> list:
         build_search_tool(),
         visit_webpage,
         wikipedia_search,
+        wikipedia_studio_albums,
         arxiv_search,
         read_text_file,
         read_excel_summary,

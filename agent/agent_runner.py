@@ -35,7 +35,9 @@ Use tools and Python code whenever needed:
 
 Research tips:
 - Prefer wikipedia_search() over visiting wikipedia.org URLs
+- For discography counts, use wikipedia_studio_albums(title, start_year, end_year)
 - Use web_search() snippets first; only visit_webpage() when snippets lack the fact
+- Do not fetch Wikipedia API URLs manually or json.loads() tool output — use Wikipedia tools
 - Never fetch github.com blob or raw JSON pages — they are not useful
 - Keep tool use efficient: aim to answer in 3–5 steps when possible
 

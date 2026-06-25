@@ -26,6 +26,58 @@ def build_search_tool() -> DuckDuckGoSearchTool:
     return DuckDuckGoSearchTool()
 
 
+def _should_return_raw_response(url: str, content_type: str) -> bool:
+    lowered = url.lower()
+    if "format=json" in lowered or "/api.php" in lowered:
+        return True
+    if lowered.endswith(".json"):
+        return True
+    return "application/json" in content_type.lower()
+
+
+def _fetch_wikipedia_wikitext(page_title: str) -> str:
+    response = requests.get(
+        "https://en.wikipedia.org/w/api.php",
+        params={
+            "action": "parse",
+            "page": page_title.replace(" ", "_"),
+            "prop": "wikitext",
+            "format": "json",
+        },
+        timeout=20,
+        headers=WIKIPEDIA_HEADERS,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    return payload["parse"]["wikitext"]["*"]
+
+
+def parse_studio_album_rows(wikitext: str) -> list[tuple[int, str]]:
+    """Extract (year, album label) rows from a Wikipedia studio-albums section."""
+    match = re.search(
+        r"===\s*Studio albums\s*===\n(.*?)(?:\n===[^=]|\Z)",
+        wikitext,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not match:
+        return []
+
+    section = match.group(1)
+    rows: list[tuple[int, str]] = []
+    for year_text, album_cell in re.findall(
+        r"^\|\s*(\d{4})\s*\n\|(.+?)(?=\n\|-|\n\|\s*\d{4}\s*\n|\Z)",
+        section,
+        re.MULTILINE | re.DOTALL,
+    ):
+        year = int(year_text)
+        album = re.sub(r"\[\[([^|\]]+\|)?([^\]]+)\]\]", r"\2", album_cell)
+        album = re.sub(r"''+", "", album)
+        album = re.sub(r"<[^>]+>", "", album)
+        album = " ".join(album.split())
+        rows.append((year, album[:200]))
+    return rows
+
+
 @tool
 def visit_webpage(url: str) -> str:
     """Fetch a web page and return readable markdown text.
@@ -85,6 +137,37 @@ def wikipedia_search(query: str) -> str:
 
 
 @tool
+def wikipedia_studio_albums(page_title: str, start_year: int, end_year: int) -> str:
+    """Count studio albums listed on English Wikipedia within an inclusive year range.
+
+    Args:
+        page_title: Wikipedia article title, e.g. "Mercedes Sosa".
+        start_year: First release year to include.
+        end_year: Last release year to include.
+    """
+    if start_year > end_year:
+        return f"Invalid year range: {start_year} > {end_year}"
+
+    try:
+        wikitext = _fetch_wikipedia_wikitext(page_title)
+        rows = parse_studio_album_rows(wikitext)
+        if not rows:
+            return f'No "Studio albums" section found on Wikipedia page: {page_title}'
+
+        selected = [(year, album) for year, album in rows if start_year <= year <= end_year]
+        lines = [f"- {year}: {album}" for year, album in selected]
+        header = (
+            f'Studio albums on "{page_title}" (English Wikipedia) '
+            f"between {start_year} and {end_year} inclusive: {len(selected)}"
+        )
+        if not lines:
+            return header + "\n(none listed in that range)"
+        return header + "\n\n" + "\n".join(lines)
+    except Exception as error:
+        return f"Wikipedia discography lookup failed: {error}"
+
+
+@tool
 def fetch_url_as_markdown(url: str) -> str:
     """Fetch a web page and return readable markdown text.
 
@@ -94,6 +177,9 @@ def fetch_url_as_markdown(url: str) -> str:
     try:
         response = requests.get(url, timeout=30, headers=FETCH_HEADERS)
         response.raise_for_status()
+        content_type = response.headers.get("Content-Type", "")
+        if _should_return_raw_response(url, content_type):
+            return response.text[:12000]
         markdown_content = markdownify(response.text).strip()
         markdown_content = re.sub(r"\n{3,}", "\n\n", markdown_content)
         return markdown_content[:12000]
@@ -327,6 +413,7 @@ def build_tools() -> list:
         build_search_tool(),
         visit_webpage,
         wikipedia_search,
+        wikipedia_studio_albums,
         fetch_url_as_markdown,
         read_text_file,
         read_excel_summary,
