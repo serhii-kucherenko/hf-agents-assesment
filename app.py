@@ -168,8 +168,7 @@ with gr.Blocks() as demo:
         **Instructions (HF Space):**
 
         1. Add **`GROQ_API_KEY`** in Space Settings → Secrets (free at [console.groq.com](https://console.groq.com)).
-           This avoids Hugging Face inference credits (402 errors).
-        2. Optional: keep `HF_TOKEN` for login; inference uses Groq when `GROQ_API_KEY` is set.
+        2. Optional: **`GROQ_MODEL`** — default is `llama-3.3-70b-versatile`. Do not use bare `gpt-oss-20b`; use `openai/gpt-oss-20b` if you want GPT-OSS.
         3. Log in with Hugging Face, then click **Run Evaluation & Submit All Answers**.
 
         **No Groq key?** Run locally instead: `python run_local.py --mode score` with Ollama.

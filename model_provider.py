@@ -50,6 +50,18 @@ def _resolve_llamacpp_model_id(api_base: str, configured_id: str) -> str:
     return configured_id
 
 
+def _normalize_groq_model_id(model_name: str) -> str:
+    """Map common Groq model names to IDs accepted by api.groq.com."""
+    aliases = {
+        "gpt-oss-20b": "openai/gpt-oss-20b",
+        "gpt-oss-120b": "openai/gpt-oss-120b",
+        "llama-3.3-70b": "llama-3.3-70b-versatile",
+        "llama3.3-70b-versatile": "llama-3.3-70b-versatile",
+    }
+    cleaned = model_name.strip()
+    return aliases.get(cleaned, cleaned)
+
+
 def build_model() -> Model:
     provider = get_llm_provider()
 
@@ -95,8 +107,8 @@ def build_model() -> Model:
                 "Get a free key at https://console.groq.com — "
                 "this bypasses Hugging Face inference credits."
             )
-        model_name = os.getenv(
-            "GROQ_MODEL", "openai/gpt-oss-20b"
+        model_name = _normalize_groq_model_id(
+            os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         )
         api_base = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
         print(f"Using Groq model {model_name} at {api_base}")
@@ -105,6 +117,7 @@ def build_model() -> Model:
             api_base=api_base,
             api_key=api_key,
             temperature=0,
+            num_ctx=int(os.getenv("GROQ_NUM_CTX", "131072")),
         )
 
     model_name = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
