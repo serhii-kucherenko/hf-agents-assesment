@@ -41,16 +41,35 @@ Answer formatting rules (critical):
 Examples:
 - Question asks for a count -> final_answer("3")
 - Question asks for a name -> final_answer("Smith")
-- Question asks for a list -> final_answer("a,b,c")
+- Question asks for a list -> final_answer("a, b, c") with a comma and space between items
 """.strip()
 
 
 def _extract_answer(raw_result: str) -> str:
     text = str(raw_result).strip()
+
+    final_match = re.search(
+        r'final_answer\s*\(\s*["\'](.+?)["\']\s*\)',
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if final_match:
+        return normalize_answer(final_match.group(1))
+
+    if len(text) < 200 and "def " not in text and "import " not in text:
+        return normalize_answer(text)
+
     if "```" in text:
         code_blocks = re.findall(r"```(?:\w*\n)?(.*?)```", text, flags=re.DOTALL)
-        if code_blocks:
-            text = code_blocks[-1].strip()
+        for block in reversed(code_blocks):
+            block_match = re.search(
+                r'final_answer\s*\(\s*["\'](.+?)["\']\s*\)',
+                block,
+                flags=re.DOTALL | re.IGNORECASE,
+            )
+            if block_match:
+                return normalize_answer(block_match.group(1))
+
     return normalize_answer(text)
 
 
