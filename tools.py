@@ -9,16 +9,31 @@ from pathlib import Path
 import requests
 from markdownify import markdownify
 from requests.exceptions import RequestException
-from smolagents import DuckDuckGoSearchTool, VisitWebpageTool, tool
+from smolagents import DuckDuckGoSearchTool, tool
 from youtube_transcript_api import YouTubeTranscriptApi
+
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (compatible; GAIAAgent/1.0; "
+    "+https://huggingface.co/spaces/ken2ki/Final_Assignment_Template)"
+)
+WIKIPEDIA_HEADERS = {
+    "User-Agent": os.getenv("WIKIPEDIA_USER_AGENT", BROWSER_USER_AGENT),
+}
+FETCH_HEADERS = {"User-Agent": BROWSER_USER_AGENT}
 
 
 def build_search_tool() -> DuckDuckGoSearchTool:
     return DuckDuckGoSearchTool()
 
 
-def build_visit_webpage_tool() -> VisitWebpageTool:
-    return VisitWebpageTool()
+@tool
+def visit_webpage(url: str) -> str:
+    """Fetch a web page and return readable markdown text.
+
+    Args:
+        url: Full URL to fetch.
+    """
+    return fetch_url_as_markdown(url)
 
 
 @tool
@@ -37,7 +52,9 @@ def wikipedia_search(query: str) -> str:
             "format": "json",
             "srlimit": 3,
         }
-        search_response = requests.get(search_url, params=search_params, timeout=20)
+        search_response = requests.get(
+            search_url, params=search_params, timeout=20, headers=WIKIPEDIA_HEADERS
+        )
         search_response.raise_for_status()
         results = search_response.json().get("query", {}).get("search", [])
         if not results:
@@ -54,7 +71,9 @@ def wikipedia_search(query: str) -> str:
                 "titles": title,
                 "format": "json",
             }
-            extract_response = requests.get(search_url, params=extract_params, timeout=20)
+            extract_response = requests.get(
+                search_url, params=extract_params, timeout=20, headers=WIKIPEDIA_HEADERS
+            )
             extract_response.raise_for_status()
             pages = extract_response.json().get("query", {}).get("pages", {})
             page = next(iter(pages.values()), {})
@@ -73,7 +92,7 @@ def fetch_url_as_markdown(url: str) -> str:
         url: Full URL to fetch.
     """
     try:
-        response = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        response = requests.get(url, timeout=30, headers=FETCH_HEADERS)
         response.raise_for_status()
         markdown_content = markdownify(response.text).strip()
         markdown_content = re.sub(r"\n{3,}", "\n\n", markdown_content)
@@ -306,7 +325,7 @@ def get_youtube_transcript(video_url: str) -> str:
 def build_tools() -> list:
     return [
         build_search_tool(),
-        build_visit_webpage_tool(),
+        visit_webpage,
         wikipedia_search,
         fetch_url_as_markdown,
         read_text_file,

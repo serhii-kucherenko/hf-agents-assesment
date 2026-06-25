@@ -4,6 +4,7 @@ import pytest
 from smolagents.models import ChatMessage, MessageRole
 
 from provider_chain import (
+    GROQ_API_BASE,
     ProviderFallbackModel,
     build_provider_fallback_chain,
     provider_fallback_order,
@@ -29,8 +30,8 @@ def test_build_provider_chain_groq_cerebras_google():
     labels = [slot.label for slot in chain]
     assert labels[0] == "groq:scout"
     assert "groq:compound" in labels
-    assert "cerebras:cerebras/qwen-3-32b" in labels
-    assert labels[-1] == "google:gemini/gemini-2.0-flash"
+    assert "cerebras:qwen-3-32b" in labels
+    assert labels[-1] == "google:gemini/gemini-2.5-flash-lite"
 
 
 def test_groq_stays_first_when_order_puts_cerebras_first():
@@ -47,10 +48,27 @@ def test_groq_stays_first_when_order_puts_cerebras_first():
     assert any(slot.provider == "cerebras" for slot in chain)
 
 
-def test_cerebras_model_id_has_litellm_prefix():
+def test_cerebras_model_id_uses_api_base_not_litellm_prefix():
     from provider_chain import _normalize_cerebras_model_id
 
-    assert _normalize_cerebras_model_id("qwen-3-32b") == "cerebras/qwen-3-32b"
+    assert _normalize_cerebras_model_id("qwen-3-32b") == "qwen-3-32b"
+
+
+def test_reset_for_question_clears_exhaustion():
+    from provider_chain import ModelSlot
+
+    model = ProviderFallbackModel(
+        slots=[
+            ModelSlot(provider="groq", model_id="scout", api_key="k", api_base=GROQ_API_BASE),
+            ModelSlot(provider="google", model_id="gemini/x", api_key="k", api_base=None),
+        ],
+    )
+    model._exhausted.add("groq:scout")
+    model._active_index = 1
+    model.reset_for_question()
+    assert model._exhausted == set()
+    assert model._active_index == 0
+    assert model.model_id == "scout"
 
 
 def test_provider_fallback_model_switches_on_litellm_provider_error():
@@ -67,7 +85,7 @@ def test_provider_fallback_model_switches_on_litellm_provider_error():
         slots=[
             ModelSlot(
                 provider="cerebras",
-                model_id="cerebras/qwen-3-32b",
+                model_id="qwen-3-32b",
                 api_key="csk",
                 api_base="https://api.cerebras.ai/v1",
             ),
@@ -81,7 +99,7 @@ def test_provider_fallback_model_switches_on_litellm_provider_error():
     )
 
     with patch.object(model, "_get_model", side_effect=lambda slot: {
-        "cerebras:cerebras/qwen-3-32b": primary,
+        "cerebras:qwen-3-32b": primary,
         "groq:scout": fallback,
     }[slot.label]):
         result = model.generate([{"role": "user", "content": "hello"}])
@@ -113,7 +131,7 @@ def test_provider_fallback_model_switches_provider():
             ),
             ModelSlot(
                 provider="cerebras",
-                model_id="cerebras/qwen-3-32b",
+                model_id="qwen-3-32b",
                 api_key="csk",
                 api_base="https://api.cerebras.ai/v1",
             ),
@@ -122,9 +140,9 @@ def test_provider_fallback_model_switches_provider():
 
     with patch.object(model, "_get_model", side_effect=lambda slot: {
         "groq:scout": primary,
-        "cerebras:cerebras/qwen-3-32b": fallback,
+        "cerebras:qwen-3-32b": fallback,
     }[slot.label]):
         result = model.generate([{"role": "user", "content": "hello"}])
 
     assert result.content == "ok"
-    assert model.active_model_id == "cerebras/qwen-3-32b"
+    assert model.active_model_id == "qwen-3-32b"

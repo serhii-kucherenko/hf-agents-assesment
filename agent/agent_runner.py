@@ -19,6 +19,7 @@ from model_provider import (
     supports_think_toggle,
     use_markdown_code_blocks,
 )
+from provider_chain import ProviderFallbackModel
 
 MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "12"))
 
@@ -31,6 +32,12 @@ Use tools and Python code whenever needed:
 - file tools for attachments (PDF, Excel, CSV, images, audio)
 - get_youtube_transcript for YouTube links
 - execute_code for local Python or bash computation
+
+Research tips:
+- Prefer wikipedia_search() over visiting wikipedia.org URLs
+- Use web_search() snippets first; only visit_webpage() when snippets lack the fact
+- Never fetch github.com blob or raw JSON pages — they are not useful
+- Keep tool use efficient: aim to answer in 3–5 steps when possible
 
 Every action must be valid Python inside a code block.
 When done, call final_answer("...") with ONLY the answer value.
@@ -127,5 +134,8 @@ class AgentRunner:
             think = should_use_think_mode(question, file_path)
         if think is not None and supports_think_toggle():
             apply_think_mode(self.agent.model, think)
+        model = self.agent.model
+        if isinstance(model, ProviderFallbackModel):
+            model.reset_for_question()
         print(f"Running agent on question (first 80 chars): {prompt[:80]}...")
         return str(self.agent.run(prompt))

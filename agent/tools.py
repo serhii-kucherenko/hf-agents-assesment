@@ -8,7 +8,7 @@ from smolagents import tool
 from agent.code_interpreter import run_python
 from tools import (
     build_search_tool,
-    build_visit_webpage_tool,
+    visit_webpage,
     describe_image,
     fetch_url_as_markdown,
     get_youtube_transcript,
@@ -187,10 +187,9 @@ def square_root(a: float) -> float | complex:
 def build_agent_tools() -> list:
     tools = [
         build_search_tool(),
-        build_visit_webpage_tool(),
+        visit_webpage,
         wikipedia_search,
         arxiv_search,
-        fetch_url_as_markdown,
         read_text_file,
         read_excel_summary,
         analyze_csv_file,

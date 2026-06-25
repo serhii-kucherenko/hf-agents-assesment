@@ -19,10 +19,15 @@ from groq_model import (
 )
 
 DEFAULT_CEREBRAS_MODEL = "qwen-3-32b"
-DEFAULT_GOOGLE_MODEL = "gemini-2.0-flash"
+DEFAULT_GOOGLE_MODEL = "gemini-2.5-flash-lite"
 
 GROQ_API_BASE = "https://api.groq.com/openai/v1"
 CEREBRAS_API_BASE = "https://api.cerebras.ai/v1"
+
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (compatible; GAIAAgent/1.0; "
+    "+https://huggingface.co/spaces/ken2ki/Final_Assignment_Template)"
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,7 @@ def google_api_key() -> str | None:
 
 
 def _normalize_cerebras_model_id(model_name: str) -> str:
+    """Bare model id — api_base routes to Cerebras (same pattern as Groq)."""
     aliases = {
         "llama-3.3-70b": "llama-3.3-70b",
         "llama3.3-70b": "llama-3.3-70b",
@@ -74,8 +80,7 @@ def _normalize_cerebras_model_id(model_name: str) -> str:
     cleaned = model_name.strip()
     if cleaned.startswith("cerebras/"):
         cleaned = cleaned[len("cerebras/") :]
-    cleaned = aliases.get(cleaned, cleaned)
-    return f"cerebras/{cleaned}"
+    return aliases.get(cleaned, cleaned)
 
 
 def _normalize_google_model_id(model_name: str) -> str:
@@ -187,6 +192,13 @@ class ProviderFallbackModel(Model):
         self._active_index = 0
         self._exhausted: set[str] = set()
         print(f"Provider fallback chain: {' -> '.join(slot.label for slot in slots)}")
+
+    def reset_for_question(self) -> None:
+        """Each question gets a fresh rotation — exhaustion must not carry over."""
+        self._exhausted.clear()
+        self._active_index = 0
+        if self.slots:
+            self.model_id = self.slots[0].model_id
 
     @property
     def active_slot(self) -> ModelSlot:
