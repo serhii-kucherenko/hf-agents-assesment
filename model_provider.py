@@ -9,9 +9,6 @@ from smolagents import InferenceClientModel, LiteLLMModel, Model, OpenAIServerMo
 
 
 def get_llm_provider() -> str:
-    if os.getenv("SPACE_ID"):
-        return "hf"
-
     explicit = os.getenv("LLM_PROVIDER", "").strip().lower()
     if explicit in {"llamacpp", "llama_cpp"}:
         return "llamacpp"
@@ -19,8 +16,17 @@ def get_llm_provider() -> str:
         return "hf"
     if explicit == "ollama":
         return "ollama"
+    if explicit == "groq":
+        return "groq"
+
     if os.getenv("USE_OLLAMA", "").strip().lower() in {"1", "true", "yes"}:
         return "ollama"
+
+    # On HF Space: prefer direct Groq if key is set (avoids HF inference credits)
+    if os.getenv("SPACE_ID"):
+        if os.getenv("GROQ_API_KEY"):
+            return "groq"
+        return "hf"
 
     return "llamacpp"
 
@@ -81,12 +87,33 @@ def build_model() -> Model:
             think=False,
         )
 
+    if provider == "groq":
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "Set GROQ_API_KEY in Space secrets (or .env locally). "
+                "Get a free key at https://console.groq.com — "
+                "this bypasses Hugging Face inference credits."
+            )
+        model_name = os.getenv(
+            "GROQ_MODEL", "openai/gpt-oss-20b"
+        )
+        api_base = os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
+        print(f"Using Groq model {model_name} at {api_base}")
+        return LiteLLMModel(
+            model_id=model_name,
+            api_base=api_base,
+            api_key=api_key,
+            temperature=0,
+        )
+
     model_name = os.getenv("HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
     token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
     if not token:
         raise RuntimeError(
-            "Set HF_TOKEN for Hugging Face Inference, or run locally with "
-            "LLM_PROVIDER=llamacpp or LLM_PROVIDER=ollama."
+            "Hugging Face inference credits exhausted or HF_TOKEN missing. "
+            "Fix options: (1) Add GROQ_API_KEY Space secret for free Groq API, "
+            "(2) run locally with LLM_PROVIDER=ollama, or (3) add HF PRO/credits."
         )
     print(f"Using Hugging Face Inference model {model_name}")
     return InferenceClientModel(model_id=model_name, token=token)

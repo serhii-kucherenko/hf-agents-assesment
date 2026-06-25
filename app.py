@@ -165,11 +165,14 @@ with gr.Blocks() as demo:
     gr.Markdown("# GAIA Agent Evaluation Runner")
     if IS_HF_SPACE:
         instructions = """
-        **Instructions:**
+        **Instructions (HF Space):**
 
-        1. Add your `HF_TOKEN` secret in Space settings.
-        2. Log in to Hugging Face with the button below.
-        3. Click **Run Evaluation & Submit All Answers** to score your agent on the 20 GAIA questions.
+        1. Add **`GROQ_API_KEY`** in Space Settings → Secrets (free at [console.groq.com](https://console.groq.com)).
+           This avoids Hugging Face inference credits (402 errors).
+        2. Optional: keep `HF_TOKEN` for login; inference uses Groq when `GROQ_API_KEY` is set.
+        3. Log in with Hugging Face, then click **Run Evaluation & Submit All Answers**.
+
+        **No Groq key?** Run locally instead: `python run_local.py --mode score` with Ollama.
         """
     else:
         instructions = """
