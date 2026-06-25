@@ -6,8 +6,9 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
-from smolagents.models import ChatMessage, Model
+from smolagents.models import ChatMessage, LiteLLMModel, Model, TokenUsage, remove_content_after_stop_sequences
 
 from groq_model import (
     GroqLiteLLMModel,
@@ -68,6 +69,87 @@ def provider_fallback_order() -> list[str]:
     return normalized or ["cerebras", "google", "groq"]
 
 
+def _strip_key(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _sync_provider_env(provider: str, api_key: str) -> None:
+    if provider == "cerebras":
+        os.environ["CEREBRAS_API_KEY"] = api_key
+    elif provider == "google":
+        os.environ["GOOGLE_API_KEY"] = api_key
+        os.environ["GEMINI_API_KEY"] = api_key
+    elif provider == "groq":
+        os.environ["GROQ_API_KEY"] = api_key
+
+
+class CloudLiteLLMModel(LiteLLMModel):
+    """LiteLLM wrapper for Cerebras / Google (Groq uses GroqLiteLLMModel)."""
+
+    def __init__(self, provider: str, *, quiet: bool = False, **kwargs: Any) -> None:
+        self.provider = provider
+        api_key = _strip_key(kwargs.get("api_key"))
+        if api_key:
+            kwargs["api_key"] = api_key
+            _sync_provider_env(provider, api_key)
+        kwargs.setdefault("retry", False)
+        super().__init__(**kwargs)
+        if quiet:
+            return
+        print(f"{provider} ready: model={self.model_id}")
+
+    def generate(
+        self,
+        messages,
+        stop_sequences=None,
+        response_format=None,
+        tools_to_call_from=None,
+        **kwargs,
+    ) -> ChatMessage:
+        tool_choice: str | None = None
+        if tools_to_call_from:
+            # Cerebras rejects tool_choice=required on some models.
+            tool_choice = "auto" if self.provider == "cerebras" else "required"
+
+        completion_kwargs = self._prepare_completion_kwargs(
+            messages=messages,
+            stop_sequences=stop_sequences,
+            response_format=response_format,
+            tools_to_call_from=tools_to_call_from,
+            tool_choice=tool_choice,
+            model=self.model_id,
+            api_base=self.api_base,
+            api_key=self.api_key,
+            convert_images_to_image_urls=True,
+            custom_role_conversions=self.custom_role_conversions,
+            **kwargs,
+        )
+        self._apply_rate_limit()
+        response = self.client.completion(**completion_kwargs)
+
+        if not response.choices:
+            raise RuntimeError(
+                f"Unexpected API response: model '{self.model_id}' returned no choices. "
+                f"Response details: {response.model_dump()}"
+            )
+        content = response.choices[0].message.content
+        if stop_sequences is not None and not self.supports_stop_parameter:
+            content = remove_content_after_stop_sequences(content, stop_sequences)
+        return ChatMessage(
+            role=response.choices[0].message.role,
+            content=content,
+            tool_calls=response.choices[0].message.tool_calls,
+            raw=response,
+            token_usage=TokenUsage(
+                input_tokens=response.usage.prompt_tokens,
+                output_tokens=response.usage.completion_tokens,
+            ),
+        )
+
+
 def google_api_key() -> str | None:
     return os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or None
 
@@ -114,7 +196,7 @@ def _single_provider_slot(
     ]
 
 def _groq_slots(normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = _strip_key(os.getenv("GROQ_API_KEY"))
     if not api_key:
         return []
     api_base = os.getenv("GROQ_API_BASE", GROQ_API_BASE)
@@ -125,7 +207,7 @@ def _groq_slots(normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
 
 
 def _cerebras_slots(_normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
-    api_key = os.getenv("CEREBRAS_API_KEY")
+    api_key = _strip_key(os.getenv("CEREBRAS_API_KEY"))
     if not api_key:
         return []
     model_ids = [_normalize_cerebras_model_id(model_id) for model_id in DEFAULT_CEREBRAS_MODEL_CHAIN]
@@ -136,7 +218,7 @@ def _cerebras_slots(_normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
 
 
 def _google_slots(_normalize_groq: Callable[[str], str]) -> list[ModelSlot]:
-    api_key = google_api_key()
+    api_key = _strip_key(google_api_key())
     if not api_key:
         return []
     return _single_provider_slot(
@@ -192,7 +274,7 @@ class ProviderFallbackModel(Model):
         super().__init__(model_id=slots[0].model_id, temperature=temperature)
         self.slots = slots
         self.temperature = temperature
-        self._models: dict[str, GroqLiteLLMModel] = {}
+        self._models: dict[str, GroqLiteLLMModel | CloudLiteLLMModel] = {}
         self._active_index = 0
         self._exhausted: set[str] = set()
         print(f"Provider fallback chain: {' -> '.join(slot.label for slot in slots)}")
@@ -216,18 +298,27 @@ class ProviderFallbackModel(Model):
     def active_model_id(self) -> str:
         return self.active_slot.model_id
 
-    def _get_model(self, slot: ModelSlot) -> GroqLiteLLMModel:
+    def _get_model(self, slot: ModelSlot) -> GroqLiteLLMModel | CloudLiteLLMModel:
         if slot.label not in self._models:
             quiet = len(self._models) > 0
-            kwargs: dict = {
-                "model_id": slot.model_id,
-                "api_key": slot.api_key,
-                "temperature": self.temperature,
-                "quiet": quiet,
-            }
-            if slot.api_base:
-                kwargs["api_base"] = slot.api_base
-            self._models[slot.label] = GroqLiteLLMModel(**kwargs)
+            api_key = _strip_key(slot.api_key) or slot.api_key
+            if slot.provider == "groq":
+                self._models[slot.label] = GroqLiteLLMModel(
+                    model_id=slot.model_id,
+                    api_key=api_key,
+                    api_base=slot.api_base,
+                    temperature=self.temperature,
+                    quiet=quiet,
+                )
+            else:
+                self._models[slot.label] = CloudLiteLLMModel(
+                    slot.provider,
+                    model_id=slot.model_id,
+                    api_key=api_key,
+                    api_base=slot.api_base,
+                    temperature=self.temperature,
+                    quiet=quiet,
+                )
         return self._models[slot.label]
 
     def _shared_throttle(self) -> None:
@@ -248,6 +339,7 @@ class ProviderFallbackModel(Model):
             self._active_index += 1
 
         reason = _groq_failure_reason(error)
+        detail = str(error).replace("\n", " ")[:240]
         next_index = self._active_index
         while next_index < len(self.slots):
             candidate = self.slots[next_index]
@@ -256,6 +348,7 @@ class ProviderFallbackModel(Model):
                     f"{slot.provider} {reason} on {slot.model_id!r}. "
                     f"Switching to {candidate.label!r}."
                 )
+                print(f"  Detail: {detail}")
                 self._active_index = next_index
                 self.model_id = candidate.model_id
                 return True

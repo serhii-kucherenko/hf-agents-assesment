@@ -42,6 +42,15 @@ QUOTA_EXHAUSTED_PATTERNS = (
     '"type": "tokens"',
 )
 
+AUTH_ERROR_PATTERNS = (
+    "invalid api key",
+    "incorrect api key",
+    "unauthorized",
+    "authentication",
+    "permission denied",
+    "401",
+)
+
 UNAVAILABLE_MODEL_PATTERNS = (
     "model_not_found",
     "does not exist",
@@ -136,6 +145,8 @@ def groq_retry_wait_seconds(error: BaseException, attempt: int) -> float:
 def is_groq_unavailable_model_error(error: BaseException) -> bool:
     """Model id invalid or inaccessible — skip to next model immediately."""
     message = str(error).lower()
+    if any(pattern in message for pattern in AUTH_ERROR_PATTERNS):
+        return True
     if "404" in message and "model" in message:
         return True
     return any(pattern in message for pattern in UNAVAILABLE_MODEL_PATTERNS)
@@ -194,6 +205,8 @@ def is_hard_groq_limit_error(error: BaseException) -> bool:
 
 
 def _groq_failure_reason(error: BaseException) -> str:
+    if any(pattern in str(error).lower() for pattern in AUTH_ERROR_PATTERNS):
+        return "auth failed"
     if is_groq_unavailable_model_error(error):
         return "unavailable"
     if is_groq_context_limit_error(error):
