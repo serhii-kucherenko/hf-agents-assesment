@@ -158,7 +158,7 @@ The same agent code runs locally and on the Space, but the **LLM backend** chang
 
 Set `LLM_PROVIDER` explicitly to override: `ollama`, `llamacpp`, `groq`, or `hf`.
 
-On Groq, defaults are fine — **`GROQ_FALLBACK_ENABLED=1`** rotates through **`compound-mini` → `70B` → `8B-instant`** when a model hits TPM/TPD/RPD. Daily quota errors switch immediately (no hour-long waits).
+On Groq, defaults are fine — **`GROQ_FALLBACK_ENABLED=1`** rotates through **`8B-instant` → `qwen3-32b` → `70B`** when a model hits limits or is unavailable. Do not use `groq/compound*` in the chain (404 with CodeAgent).
 
 ---
 

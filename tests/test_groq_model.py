@@ -13,6 +13,8 @@ from groq_model import (
     groq_requests_per_minute,
     groq_retry_wait_seconds,
     is_groq_quota_exhausted_error,
+    is_groq_unavailable_model_error,
+    is_groq_fallback_error,
     is_hard_groq_limit_error,
     parse_groq_retry_seconds,
 )
@@ -20,6 +22,37 @@ from groq_model import (
 
 def _normalize(model_name: str) -> str:
     return model_name.strip()
+
+
+def test_is_groq_unavailable_model_error():
+    error = RuntimeError("The model `compound-mini` does not exist or you do not have access to it.")
+    assert is_groq_unavailable_model_error(error)
+    assert is_groq_fallback_error(error)
+
+
+def test_groq_fallback_model_skips_missing_model():
+    primary = MagicMock()
+    fallback = MagicMock()
+    primary.generate.side_effect = RuntimeError(
+        "model_not_found: The model `compound-mini` does not exist"
+    )
+    fallback.generate.return_value = ChatMessage(role=MessageRole.ASSISTANT, content="ok")
+
+    model = GroqFallbackModel(
+        model_ids=["compound-mini", "llama-3.1-8b-instant"],
+        api_key="test",
+        api_base="https://api.groq.com/openai/v1",
+    )
+
+    with patch.object(model, "_get_model", side_effect=lambda model_id: {
+        "compound-mini": primary,
+        "llama-3.1-8b-instant": fallback,
+    }[model_id]):
+        result = model.generate([{"role": "user", "content": "hello"}])
+
+    assert result.content == "ok"
+    assert primary.generate.call_count == 1
+    assert model.active_model_id == "llama-3.1-8b-instant"
 
 
 def test_is_hard_groq_limit_error_rate_limit():

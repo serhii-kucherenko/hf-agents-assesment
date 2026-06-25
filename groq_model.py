@@ -25,11 +25,12 @@ GROQ_RETRY_AFTER_HMS_PATTERN = re.compile(
 GROQ_DEFAULT_SPACE_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 GROQ_DEFAULT_LOCAL_MODEL = "llama-3.3-70b-versatile"
 
-# Separate Groq quota pools; tried in order after the primary hits a hard limit.
+# Standard Groq chat models (CodeAgent-compatible). Do not use groq/compound* here —
+# LiteLLM sends the wrong id and compound models reject custom client tools.
 DEFAULT_GROQ_FALLBACK_CHAIN = (
-    "groq/compound-mini",
-    "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
+    "qwen/qwen3-32b",
+    "llama-3.3-70b-versatile",
 )
 
 QUOTA_EXHAUSTED_PATTERNS = (
@@ -37,6 +38,12 @@ QUOTA_EXHAUSTED_PATTERNS = (
     "requests per day",
     '"type":"tokens"',
     '"type": "tokens"',
+)
+
+UNAVAILABLE_MODEL_PATTERNS = (
+    "model_not_found",
+    "does not exist",
+    "do not have access",
 )
 
 T = TypeVar("T")
@@ -113,6 +120,19 @@ def groq_retry_wait_seconds(error: BaseException, attempt: int) -> float:
     return base * attempt
 
 
+def is_groq_unavailable_model_error(error: BaseException) -> bool:
+    """Model id invalid or inaccessible — skip to next model immediately."""
+    message = str(error).lower()
+    if "404" in message and "model" in message:
+        return True
+    return any(pattern in message for pattern in UNAVAILABLE_MODEL_PATTERNS)
+
+
+def is_groq_fallback_error(error: BaseException) -> bool:
+    """Switch to the next model in the chain (do not retry the same model)."""
+    return is_groq_unavailable_model_error(error) or is_hard_groq_limit_error(error)
+
+
 def is_hard_groq_limit_error(error: BaseException) -> bool:
     """True when the current model cannot serve this request (switch to fallback)."""
     if is_groq_quota_exhausted_error(error):
@@ -152,7 +172,7 @@ def call_with_groq_retry(fn: Callable[..., T], **kwargs: Any) -> T:
             return fn(**kwargs)
         except Exception as error:
             last_error = error
-            if is_groq_quota_exhausted_error(error):
+            if is_groq_quota_exhausted_error(error) or is_groq_unavailable_model_error(error):
                 raise
             if not is_rate_limit_error(error) or attempt >= max_attempts:
                 raise
@@ -281,19 +301,20 @@ class GroqFallbackModel(Model):
             )
         return self._models[model_id]
 
-    def _advance_after_hard_limit(self, model_id: str, error: BaseException) -> bool:
+    def _advance_after_failure(self, model_id: str, error: BaseException) -> bool:
         self._exhausted.add(model_id)
         while self._active_index < len(self.model_ids):
             if self.model_ids[self._active_index] not in self._exhausted:
                 break
             self._active_index += 1
 
+        reason = "unavailable" if is_groq_unavailable_model_error(error) else "limit hit"
         next_index = self._active_index
         while next_index < len(self.model_ids):
             candidate = self.model_ids[next_index]
             if candidate not in self._exhausted:
                 print(
-                    f"Groq hard limit on {model_id!r}. "
+                    f"Groq {reason} on {model_id!r}. "
                     f"Switching to {candidate!r}."
                 )
                 self._active_index = next_index
@@ -301,7 +322,7 @@ class GroqFallbackModel(Model):
                 return True
             next_index += 1
 
-        print(f"Groq hard limit on {model_id!r} and no fallback models remain.")
+        print(f"Groq {reason} on {model_id!r} and no fallback models remain.")
         return False
 
     def generate(
@@ -334,9 +355,9 @@ class GroqFallbackModel(Model):
                 )
             except Exception as error:
                 last_error = error
-                if not is_hard_groq_limit_error(error):
+                if not is_groq_fallback_error(error):
                     raise
-                if not self._advance_after_hard_limit(model_id, error):
+                if not self._advance_after_failure(model_id, error):
                     raise
                 attempts += 1
 
