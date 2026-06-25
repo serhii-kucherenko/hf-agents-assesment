@@ -1,5 +1,5 @@
 ---
-title: GAIA Agent — Agents Course Unit 4
+title: GAIA Agent
 emoji: 🕵🏻‍♂️
 colorFrom: indigo
 colorTo: indigo
@@ -11,7 +11,7 @@ hf_oauth: true
 hf_oauth_expiration_minutes: 480
 ---
 
-# GAIA Agent — Hugging Face Agents Course (Unit 4)
+# GAIA Agent
 
 A **smolagents**-based agent for the [Unit 4 final assignment](https://huggingface.co/learn/agents-course/unit4/introduction): answer 20 Level-1 GAIA questions via the course scoring API and reach **≥30%** for the certificate.
 
